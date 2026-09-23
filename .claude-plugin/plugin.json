@@ -13,5 +13,7 @@
     "warp",
     "tui",
     "fugu"
-  ]
+  ],
+  "homepage": "https://github.com/Abunaico/fugu",
+  "repository": "https://github.com/Abunaico/fugu"
 }

@@ -41,28 +41,27 @@ your disk. No OAuth token handling, no credential intermediation, no network cal
 
 ## Install
 
-Try it for one session:
-
-```bash
-claude --plugin-dir /path/to/fugu
-```
-
-Then, inside the session:
+Inside Claude Code:
 
 ```
-/fugu:hud install   # points your statusLine at fugu's launcher (timestamped settings backup)
-/fugu:sessions   # scan the radar
-/fugu:context    # see what's in your context
-```
-
-To keep it, install through the marketplace this repo ships:
-
-```
-/plugin marketplace add /path/to/fugu
+/plugin marketplace add Abunaico/fugu
 /plugin install fugu@fugu-tools
 ```
 
-Or alias it: `alias claude='claude --plugin-dir /path/to/fugu'`.
+Then start a new session and run:
+
+```
+/fugu:hud install   # points your statusLine at fugu's launcher (timestamped settings backup)
+/fugu:sessions      # scan the radar
+/fugu:context       # see what's in your context
+```
+
+To try it for one session without installing, clone the repo and load it directly:
+
+```bash
+git clone https://github.com/Abunaico/fugu.git
+claude --plugin-dir ./fugu
+```
 
 Updates reach the HUD on their own. Claude Code only lets a plugin ship the subagent row
 renderer, so the main statusLine is a user setting holding a path. `/fugu:hud` points it at a
