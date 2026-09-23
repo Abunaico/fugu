@@ -276,7 +276,7 @@ out=$(HOME=$TS FUGU_WATCH_ONCE=1 ./bin/fugu-watch); [ -z "$out" ] && ok "watch=o
 rm -f "$TS/.fugu/config"
 HOME=$TS node bin/fugu-config off hud.cost fleet >/dev/null
 chk "fugu-config writes key=off" "$(grep -cE '^[a-z.]+=off$' "$TS/.fugu/config")" "2"
-chk "fugu-config file is private" "$(stat -f %Lp "$TS/.fugu/config" 2>/dev/null || stat -c %a "$TS/.fugu/config")" "600"
+chk "fugu-config file is private" "$(stat -c %a "$TS/.fugu/config" 2>/dev/null || stat -f %Lp "$TS/.fugu/config")" "600"
 HOME=$TS node bin/fugu-config on hud.cost >/dev/null
 chk "fugu-config on removes key" "$(HOME=$TS node bin/fugu-config --json | jq -r '[.["hud.cost"], .fleet] | map(tostring) | join(" ")')" "true false"
 HOME=$TS node bin/fugu-config off nope >/dev/null 2>&1; chk "unknown feature rejected" "$?" "2"
@@ -346,8 +346,8 @@ PY
 out=$(HOME=$TX node bin/fugu-context eeeeeeee-1111-2222-3333-444444444444 2>&1)
 case "$out" in *$'\x1b]'*) bad "fugu-context strips transcript strings";; *) ok "fugu-context strips transcript strings";; esac
 out=$(HOME=$TX node bin/fugu-sessions 2>&1); case "$out" in *$'\x1b]'*) bad "radar strips project path";; *) ok "radar strips project path";; esac
-chk "radar cache is private" "$(stat -f %Lp "$TX/.fugu/sessions-cache.json" 2>/dev/null || stat -c %a "$TX/.fugu/sessions-cache.json")" "600"
-chk "radar cache dir is private" "$(stat -f %Lp "$TX/.fugu" 2>/dev/null || stat -c %a "$TX/.fugu")" "700"
+chk "radar cache is private" "$(stat -c %a "$TX/.fugu/sessions-cache.json" 2>/dev/null || stat -f %Lp "$TX/.fugu/sessions-cache.json")" "600"
+chk "radar cache dir is private" "$(stat -c %a "$TX/.fugu" 2>/dev/null || stat -f %Lp "$TX/.fugu")" "700"
 rm -rf "$TX"
 
 echo "— accounts: discovery —"

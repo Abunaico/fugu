@@ -27,6 +27,10 @@ MAG=$'\033[35m'; DIM=$'\033[2m'; RST=$'\033[0m'; BOLD=$'\033[1m'
 
 strip_ctrl() { tr -d '\000-\037\177'; }
 
+# File mtime in epoch secs. GNU first: on Linux `stat -f` is a real flag
+# (filesystem info) that prints junk before failing; BSD rejects -c cleanly.
+mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
+
 # One jq pass for every field. Every value is stripped of C0/C1 controls (ESC,
 # CSI, OSC, CR, LF, and the 0x1f separator) before it can reach the terminal.
 # resets_at arrives as ISO text (any offset) or epoch; normalized to epoch secs.
@@ -113,7 +117,7 @@ if [ -n "$cwd" ] && [ -n "$cache_ok" ] && feat hud.git; then
   [ -L "$cache" ] && rm -f "$cache"
 
   age=999
-  [ -f "$cache" ] && age=$(( now - $(stat -f %m "$cache" 2>/dev/null || stat -c %Y "$cache" 2>/dev/null || echo 0) ))
+  [ -f "$cache" ] && age=$(( now - $(mtime "$cache") ))
   if [ "$age" -gt 5 ]; then
     # Refresh out of band; this render serves whatever the cache last held.
     # Single-flight lock: a hung mount pins ONE subshell, not one per render.
@@ -137,7 +141,7 @@ if [ -n "$cwd" ] && [ -n "$cache_ok" ] && feat hud.git; then
       disown 2>/dev/null
     else
       # Reap a stale lock (killed subshell or reboot mid-refresh) after 120s.
-      lockage=$(( now - $(stat -f %m "$lock" 2>/dev/null || stat -c %Y "$lock" 2>/dev/null || echo 0) ))
+      lockage=$(( now - $(mtime "$lock") ))
       [ "$lockage" -gt 120 ] && rmdir "$lock" 2>/dev/null
     fi
   fi
@@ -175,7 +179,7 @@ if [ -n "$cache_ok" ] && [ -n "$acct_email" ] && { [ -n "$h5" ] || [ -n "$d7" ];
   ufile="$cache_dir/usage-$(printf '%s' "$acct_email" | cksum | cut -d' ' -f1)"
   vals="$h5|$h5r|$d7|$d7r"
   uage=999
-  [ -f "$ufile" ] && uage=$(( now - $(stat -f %m "$ufile" 2>/dev/null || stat -c %Y "$ufile" 2>/dev/null || echo 0) ))
+  [ -f "$ufile" ] && uage=$(( now - $(mtime "$ufile") ))
   if [ ! -L "$ufile" ] && { [ "$uage" -gt 60 ] || ! grep -qF "\"v\":\"$vals\"" "$ufile" 2>/dev/null; }; then
     utmp=$(mktemp "$cache_dir/.usage-XXXXXX" 2>/dev/null) && {
       jq -nc --arg e "$acct_email" --arg p "$acct_plan" --arg v "$vals" --argjson at "$now" \
