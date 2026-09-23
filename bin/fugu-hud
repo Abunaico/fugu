@@ -1,0 +1,172 @@
+#!/usr/bin/env node
+// fugu hud — install, check, repair, or remove the HUD statusline.
+//
+// Claude Code only lets plugins ship a subagentStatusLine; the main statusLine
+// is user config holding an absolute path. Plugin updates move the plugin
+// (marketplace installs keep the version in the path), which would strand a
+// path pointing at one copy. So settings point at a stable launcher,
+// ~/.fugu/bin/statusline, and the launcher runs statusline.sh from the fugu
+// copy Claude Code loaded most recently (recorded in ~/.fugu/root by the
+// SessionStart hook). Updates need no re-install.
+//
+// Usage: fugu-hud [status]    what's installed and whether it's healthy
+//        fugu-hud install     launcher + one settings key (backup first)
+//        fugu-hud repair      same as install, then status
+//        fugu-hud remove      drop the settings key (only if it's fugu's) and the launcher
+'use strict';
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const HOME = os.homedir();
+const ROOT = path.resolve(__dirname, '..');             // this copy of fugu
+const FUGU = path.join(HOME, '.fugu');
+const LAUNCHER = path.join(FUGU, 'bin', 'statusline');
+const ROOT_FILE = path.join(FUGU, 'root');
+const CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(HOME, '.claude');
+const SETTINGS = path.join(CONFIG_DIR, 'settings.json');
+const cmd = process.argv[2] || 'status';
+
+const tty = process.stdout.isTTY && !process.env.NO_COLOR;
+const C = (c, s) => tty ? `\x1b[${c}m${s}\x1b[0m` : s;
+const ok = s => console.log(`  ${C('32', '✔')} ${s}`);
+const warn = s => console.log(`  ${C('33', '!')} ${s}`);
+const bad = s => console.log(`  ${C('31', '✘')} ${s}`);
+const tilde = p => String(p).replace(HOME, '~');
+const clean = v => String(v == null ? '' : v).replace(/[\x00-\x1f\x7f\u0080-\u009f]/g, ' ');
+
+const version = dir => { try { return JSON.parse(fs.readFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), 'utf8')).version || '?'; } catch { return null; } };
+const readRoot = () => { try { return fs.readFileSync(ROOT_FILE, 'utf8').trim(); } catch { return null; } };
+
+function writePrivate(fp, body, mode) {
+  fs.mkdirSync(path.dirname(fp), { recursive: true, mode: 0o700 });
+  const tmp = `${fp}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, body, { mode, flag: 'wx' });
+  fs.renameSync(tmp, fp);
+}
+
+// The launcher itself: tiny, no jq, drains stdin on every failure path so the
+// statusline pipe never stalls.
+function launcherBody() {
+  const q = s => `'${s.replace(/'/g, `'\\''`)}'`;
+  return `#!/bin/bash
+# fugu HUD launcher, installed by /fugu:hud. Settings point here, not at a plugin
+# copy, so plugin updates never strand the HUD: this runs statusline.sh from the
+# fugu copy Claude Code loaded most recently (~/.fugu/root, written each session).
+root=""; read -r root < "$HOME/.fugu/root" 2>/dev/null   # builtin: no fork per render
+[ -n "$root" ] && [ -f "$root/statusline.sh" ] && exec bash "$root/statusline.sh"
+# Fallback: the copy this launcher was installed from.
+fallback=${q(ROOT)}
+[ -f "$fallback/statusline.sh" ] && exec bash "$fallback/statusline.sh"
+cat >/dev/null
+echo "🐡 fugu HUD: plugin not found. Run /fugu:hud repair"
+`;
+}
+
+function readSettings() {
+  if (!fs.existsSync(SETTINGS)) return { obj: {}, real: SETTINGS, existed: false };
+  const real = fs.realpathSync(SETTINGS);                 // a symlinked settings file is edited at its target
+  const txt = fs.readFileSync(real, 'utf8');
+  let obj;
+  try { obj = JSON.parse(txt); } catch { console.error(`fugu-hud: ${tilde(SETTINGS)} is not valid JSON. Not touching it.`); process.exit(1); }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) { console.error(`fugu-hud: ${tilde(SETTINGS)} is not a JSON object. Not touching it.`); process.exit(1); }
+  return { obj, real, existed: true, txt };
+}
+
+function writeSettings(s, obj) {
+  if (s.existed) {
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
+    fs.copyFileSync(s.real, `${s.real}.bak.${stamp}`);
+  }
+  const tmp = path.join(path.dirname(s.real), `.settings.json.${process.pid}.tmp`);
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2) + '\n', { flag: 'wx', mode: s.existed ? fs.statSync(s.real).mode & 0o777 : 0o644 });
+  fs.renameSync(tmp, s.real);
+}
+
+const isFuguCommand = c => typeof c === 'string' && (c === LAUNCHER || /fugu[^\s]*\/statusline\.sh$/.test(c));
+
+function install() {
+  if (!fs.existsSync(path.join(ROOT, 'statusline.sh'))) { console.error(`fugu-hud: no statusline.sh in ${ROOT}`); process.exit(1); }
+  writePrivate(LAUNCHER, launcherBody(), 0o755);
+  // Seed the root so the HUD works before the next session start records it.
+  if (!readRoot()) writePrivate(ROOT_FILE, ROOT + '\n', 0o600);
+  const s = readSettings();
+  const before = Object.keys(s.obj).length;
+  const prev = s.obj.statusLine;
+  if (prev && prev.command && !isFuguCommand(prev.command)) {
+    console.error(`fugu-hud: settings already has a different statusLine (${clean(prev.command)}). Remove it first if you want fugu's.`);
+    process.exit(1);
+  }
+  const refresh = prev && Number.isFinite(prev.refreshInterval) ? prev.refreshInterval : 30;
+  s.obj.statusLine = { type: 'command', command: LAUNCHER, refreshInterval: refresh };
+  const after = Object.keys(s.obj).length;
+  if (after !== before && after !== before + 1) { console.error('fugu-hud: key count check failed; not writing'); process.exit(1); }
+  writeSettings(s, s.obj);
+  console.log(`🐡 HUD installed: ${tilde(SETTINGS)} → ${tilde(LAUNCHER)}`);
+}
+
+function remove() {
+  const s = readSettings();
+  const c = s.obj.statusLine && s.obj.statusLine.command;
+  if (c && isFuguCommand(c)) { delete s.obj.statusLine; writeSettings(s, s.obj); console.log(`🐡 statusLine removed from ${tilde(SETTINGS)}`); }
+  else if (c) console.log(`statusLine is not fugu's (${clean(c)}); left alone.`);
+  else console.log('no statusLine set.');
+  try { fs.unlinkSync(LAUNCHER); console.log(`removed ${tilde(LAUNCHER)}`); } catch {}
+  console.log('caches (optional): rm -rf ~/.cache/fugu ~/.fugu');
+}
+
+function otherCopies(live) {
+  const found = [];
+  const cache = path.join(CONFIG_DIR, 'plugins', 'cache');
+  let markets = [];
+  try { markets = fs.readdirSync(cache); } catch {}
+  for (const m of markets) {
+    const pdir = path.join(cache, m, 'fugu');
+    let vers = [];
+    try { vers = fs.readdirSync(pdir); } catch { continue; }
+    for (const v of vers) found.push(path.join(pdir, v));
+  }
+  if (!found.includes(ROOT)) found.push(ROOT);
+  return found.filter(d => path.resolve(d) !== path.resolve(live || ''));
+}
+
+function status() {
+  console.log('🐡 fugu HUD\n');
+  let problems = 0;
+  let s;
+  try { s = readSettings(); } catch (e) { bad(`can't read ${tilde(SETTINGS)}`); process.exit(1); }
+  const c = s.obj.statusLine && s.obj.statusLine.command;
+  if (!c) { bad(`no statusLine in ${tilde(SETTINGS)}. Run: fugu-hud install`); problems++; }
+  else if (c === LAUNCHER) ok(`settings → launcher (${tilde(LAUNCHER)})`);
+  else if (isFuguCommand(c)) { warn(`settings point at one fixed copy: ${tilde(clean(c))}. Updates won't reach the HUD. Run: fugu-hud repair`); problems++; }
+  else { warn(`statusLine is not fugu's: ${clean(c)}`); problems++; }
+
+  if (c === LAUNCHER && !fs.existsSync(LAUNCHER)) { bad('launcher file missing. Run: fugu-hud repair'); problems++; }
+
+  const live = readRoot();
+  if (!live) { warn('no copy recorded yet (~/.fugu/root); the next session start records it'); }
+  else if (!fs.existsSync(path.join(live, 'statusline.sh'))) { bad(`recorded copy is gone: ${tilde(clean(live))}. Start a new session or run: fugu-hud repair`); problems++; }
+  else ok(`live copy: ${tilde(clean(live))} (v${version(live) || '?'})`);
+
+  const others = otherCopies(live);
+  for (const d of others) {
+    const v = version(d);
+    if (v) console.log(`  ${C('2', '·')} other copy: ${tilde(clean(d))} (v${v})${d.includes(`${path.sep}cache${path.sep}`) ? C('2', '  remove with /plugin if unused') : ''}`);
+  }
+
+  if (fs.existsSync(path.join(FUGU, 'disabled'))) warn('fugu is muted (/fugu:off). /fugu:on to resume.');
+  let offs = [];
+  try { offs = fs.readFileSync(path.join(FUGU, 'config'), 'utf8').split('\n').filter(l => /=\s*off\s*$/.test(l)).map(l => l.split('=')[0].trim()); } catch {}
+  if (offs.length) console.log(`  ${C('2', '·')} switched off: ${offs.map(clean).join(', ')} (/fugu:settings)`);
+  console.log(problems ? `\n  ${problems} problem${problems > 1 ? 's' : ''}.` : '\n  healthy.');
+  return problems;
+}
+
+if (cmd === 'install') install();
+else if (cmd === 'repair') {
+  // Repair also re-points the recorded copy at this one, which is the copy the user just ran.
+  writePrivate(ROOT_FILE, ROOT + '\n', 0o600);
+  install(); console.log(''); status();
+} else if (cmd === 'remove' || cmd === 'uninstall') remove();
+else if (cmd === 'status') process.exit(status() ? 1 : 0);
+else { console.error('usage: fugu-hud [status|install|repair|remove]'); process.exit(2); }

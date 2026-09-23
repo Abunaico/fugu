@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+// fugu config — turn individual fugu features on and off.
+// State lives in ~/.fugu/config as `key=off` lines; anything not listed is on.
+// Every surface reads it on each run, so changes apply on the next render/poll.
+//
+// Usage: fugu-config                    show every feature and its state
+//        fugu-config off <key>...       turn features off (on works the same)
+//        fugu-config on all | off all   everything at once
+//        fugu-config reset              back to defaults (all on)
+//        fugu-config --json
+'use strict';
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const FEATURES = [
+  ['hud.mode',    'HUD: effort level and output style'],
+  ['hud.git',     'HUD: git branch and dirty flag'],
+  ['hud.account', 'HUD: active Anthropic account'],
+  ['hud.rate',    'HUD: 5h/7d rate-limit meters'],
+  ['hud.reset',   'HUD: reset countdown on the meters (⏰)'],
+  ['hud.pace',    'HUD: pace projection on the meters (→)'],
+  ['hud.cache',   'HUD: prompt-cache countdown'],
+  ['hud.cost',    'HUD: session cost'],
+  ['hud.fish',    'HUD: the pufferfish (and the skull at 90%)'],
+  ['fleet',       'Subagent fleet rows'],
+  ['banner',      'Session start banner'],
+  ['watch',       'Cross-session watch notifications'],
+];
+const KEYS = new Set(FEATURES.map(f => f[0]));
+
+const DIR = path.join(os.homedir(), '.fugu');
+const FILE = path.join(DIR, 'config');
+
+function readOff() {
+  const off = new Set();
+  let txt = '';
+  try { txt = fs.readFileSync(FILE, 'utf8'); } catch { return off; }
+  for (const line of txt.split('\n')) {
+    const m = /^\s*([a-z.]+)\s*=\s*(on|off)\s*$/.exec(line);
+    if (m && KEYS.has(m[1]) && m[2] === 'off') off.add(m[1]);
+  }
+  return off;
+}
+
+function writeOff(off) {
+  fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
+  const body = '# fugu features: key=off disables one. Edit freely or use /fugu:settings.\n'
+    + FEATURES.filter(([k]) => off.has(k)).map(([k]) => `${k}=off\n`).join('');
+  const tmp = `${FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, body, { mode: 0o600, flag: 'wx' });
+  fs.renameSync(tmp, FILE);
+}
+
+const args = process.argv.slice(2).filter(a => a !== '--json');
+const AS_JSON = process.argv.includes('--json');
+const off = readOff();
+const [cmd, ...rest] = args;
+
+if (cmd === 'on' || cmd === 'off') {
+  const keys = rest.includes('all') ? [...KEYS] : rest;
+  const bad = keys.filter(k => !KEYS.has(k));
+  if (!keys.length || bad.length) {
+    console.error(`fugu-config: unknown feature${bad.length > 1 ? 's' : ''} ${bad.join(', ') || '(none given)'}. Known: ${[...KEYS].join(', ')}, all`);
+    process.exit(2);
+  }
+  for (const k of keys) cmd === 'off' ? off.add(k) : off.delete(k);
+  writeOff(off);
+} else if (cmd === 'reset') {
+  off.clear();
+  writeOff(off);
+} else if (cmd) {
+  console.error('usage: fugu-config [on|off <feature>...|all] [reset] [--json]');
+  process.exit(2);
+}
+
+if (AS_JSON) {
+  console.log(JSON.stringify(Object.fromEntries(FEATURES.map(([k]) => [k, !off.has(k)])), null, 2));
+  process.exit(0);
+}
+const tty = process.stdout.isTTY && !process.env.NO_COLOR;
+const C = (c, s) => tty ? `\x1b[${c}m${s}\x1b[0m` : s;
+console.log('🐡 fugu settings\n');
+for (const [k, desc] of FEATURES) {
+  const on = !off.has(k);
+  console.log(`  ${on ? C('32', 'on ') : C('2', 'off')}  ${k.padEnd(12)} ${C('2', desc)}`);
+}
+if (fs.existsSync(path.join(DIR, 'disabled'))) console.log(C('33', '\n  fugu is muted as a whole (/fugu:off); /fugu:on to resume.'));

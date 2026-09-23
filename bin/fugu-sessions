@@ -1,0 +1,206 @@
+#!/usr/bin/env node
+// fugu session radar v2 — cross-project Claude Code session index.
+// Incremental indexing ported from switchboard's harness contract:
+//   append-only transcripts resume at the last indexed byte, keyed by a
+//   head hash (dev:ino + first 4KB) so replaced files re-index from zero.
+// Cache: ~/.fugu/sessions-cache.json — no sqlite, no deps.
+//
+// Usage: fugu-sessions [--limit N] [--json] [--project <substr>]
+//                      [--active] [--search <text>] [--reindex]
+'use strict';
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+
+const args = process.argv.slice(2);
+const flag = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
+const LIMIT = (() => { const n = parseInt(flag('--limit', '15'), 10); return Number.isFinite(n) && n > 0 ? n : 15; })();
+const AS_JSON = args.includes('--json');
+const ONLY_ACTIVE = args.includes('--active');
+const REINDEX = args.includes('--reindex');
+const PROJ_FILTER = flag('--project', null);
+const SEARCH = flag('--search', null);
+
+const ROOT = path.join(os.homedir(), '.claude', 'projects');
+const CACHE_DIR = path.join(os.homedir(), '.fugu');
+const CACHE_FILE = path.join(CACHE_DIR, 'sessions-cache.json');
+const HEAD_BYTES = 4096;
+const SNIPPET_CAP = 100;
+
+// --- cache ---
+let cache = {};
+if (!REINDEX) {
+  try { cache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')); } catch {}
+}
+
+function headHash(fd, stat) {
+  const n = Math.min(HEAD_BYTES, stat.size);
+  if (n === 0) return '';
+  const buf = Buffer.alloc(n);
+  fs.readSync(fd, buf, 0, n, 0);
+  return crypto.createHash('sha1')
+    .update(`${stat.dev}:${stat.ino}:`).update(buf).digest('hex');
+}
+
+// --- per-line accumulator (ported from switchboard applyLine) ---
+function emptyState() {
+  return { summary: '', count: 0, slug: null, customTitle: null, aiTitle: null, last: null, cwd: null };
+}
+
+function applyLine(line, st) {
+  let e;
+  try { e = JSON.parse(line); } catch { return; }
+  if (e.timestamp) st.last = e.timestamp;
+  if (!st.cwd && typeof e.cwd === 'string') st.cwd = e.cwd;
+  if (typeof e.slug === 'string' && !st.slug) st.slug = e.slug;
+  if (e.type === 'custom-title' && typeof e.customTitle === 'string') st.customTitle = e.customTitle;
+  if (e.type === 'ai-title' && typeof e.aiTitle === 'string') st.aiTitle = e.aiTitle;
+  if (e.type === 'user' || e.type === 'assistant') st.count++;
+
+  if (!st.summary && e.type === 'user' && e.message) {
+    const c = e.message.content;
+    let t = typeof c === 'string' ? c
+      : Array.isArray(c) ? (c.find(p => p.type === 'text') || {}).text || '' : '';
+    if (t && !/<bash-input>|<local-command-caveat>|<command-name>/.test(t.slice(0, 4096))) {
+      t = t.slice(0, 4096);
+      t = t.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      if (t) st.summary = t.slice(0, SNIPPET_CAP);
+    }
+  }
+}
+
+/** Incremental read: resume at cached.indexedBytes when the head still matches. */
+function indexFile(fp, st8, prev) {
+  let fd;
+  try { fd = fs.openSync(fp, 'r'); } catch { return null; }
+  try {
+    const hh = headHash(fd, st8);
+    const resume = prev && prev.headHash === hh
+      && Number.isSafeInteger(prev.indexedBytes)
+      && prev.indexedBytes > 0 && prev.indexedBytes <= st8.size;
+    const st = resume ? { ...emptyState(), ...prev.state } : emptyState();
+    let pos = resume ? prev.indexedBytes : 0;
+
+    const CHUNK = 1 << 20;
+    const buf = Buffer.alloc(CHUNK);
+    let carry = Buffer.alloc(0); // raw bytes after the last newline — never decoded early
+    let consumed = pos;
+    while (pos < st8.size) {
+      const n = fs.readSync(fd, buf, 0, Math.min(CHUNK, st8.size - pos), pos);
+      if (n <= 0) break;
+      const chunk = Buffer.concat([carry, buf.subarray(0, n)]);
+      let start = 0;
+      for (let i = chunk.indexOf(0x0a); i !== -1; i = chunk.indexOf(0x0a, start)) {
+        if (i > start) applyLine(chunk.toString('utf8', start, i), st);
+        start = i + 1;
+      }
+      carry = Buffer.from(chunk.subarray(start));
+      pos += n;
+      consumed = pos - carry.length; // raw byte arithmetic — immune to UTF-8 split
+    }
+    // The trailing no-newline line is shown but NOT persisted: indexedBytes
+    // excludes it, so caching it in st would double-apply it on the next resume.
+    let disp = st;
+    if (carry.length) { disp = { ...st }; applyLine(carry.toString('utf8'), disp); }
+
+    return { headHash: hh, indexedBytes: consumed, state: st, dispState: disp };
+  } catch { return null; }
+  finally { try { fs.closeSync(fd); } catch {} }
+}
+
+// --- scan ---
+const sessions = [];
+let dirs = [];
+try { dirs = fs.readdirSync(ROOT); } catch { console.error(`no ${ROOT}`); process.exit(1); }
+
+const now = Date.now();
+for (const d of dirs) {
+  // Lossy fallback only — '_' and '-' both encode to '-'. Authoritative path
+  // comes from the transcript's own cwd field once the file is indexed.
+  const decoded = d.replace(/^-/, '/').replace(/-/g, '/');
+  if (PROJ_FILTER && !decoded.toLowerCase().replace(/\//g, '-').includes(PROJ_FILTER.toLowerCase().replace(/[/_]/g, '-'))) continue;
+  const dir = path.join(ROOT, d);
+  let files;
+  try { files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')); } catch { continue; }
+  for (const f of files) {
+    const fp = path.join(dir, f);
+    let st8;
+    try { st8 = fs.statSync(fp); } catch { continue; }
+    if (st8.size < 200) { delete cache[fp]; continue; }
+
+    const key = fp;
+    const prev = cache[key];
+    let rec;
+    if (prev && prev.mtimeMs === st8.mtimeMs && prev.size === st8.size) {
+      // Untouched since last scan — free. Serve the DISPLAY state (which may
+      // include a complete-but-unterminated tail line) so counts never flicker
+      // between an indexing run and a fast-path run.
+      rec = { ...prev, state: prev.disp || prev.state };
+    } else {
+      const idx = indexFile(fp, st8, prev);
+      if (!idx) continue;
+      const { dispState, ...cacheable } = idx;
+      rec = { mtimeMs: st8.mtimeMs, size: st8.size, ...cacheable, state: dispState };
+      // Persist BOTH: `state` resumes indexing (tail excluded, matches
+      // indexedBytes); `disp` is what the fast path shows (tail included).
+      cache[key] = { mtimeMs: st8.mtimeMs, size: st8.size, ...cacheable, disp: dispState };
+    }
+
+    const s = rec.state;
+    if (!s || !s.count) continue;
+    const ageMs = now - st8.mtimeMs;
+    const status = ageMs < 60e3 ? 'active' : ageMs < 3600e3 ? 'recent' : 'idle';
+    if (ONLY_ACTIVE && status === 'idle') continue;
+
+    const clean = v => String(v || '').replace(/[\x00-\x1f\x7f\u0080-\u009f]/g, '');
+    const title = clean(s.customTitle || s.aiTitle || s.slug || s.summary);
+    if (SEARCH && !(title + ' ' + s.summary).toLowerCase().includes(SEARCH.toLowerCase())) continue;
+
+    sessions.push({
+      id: f.replace('.jsonl', ''), project: clean(s.cwd) || decoded, file: fp,
+      mtime: st8.mtimeMs, size: st8.size, status,
+      title, summary: clean(s.summary), messages: s.count, lastTs: s.last,
+    });
+  }
+}
+
+// prune cache entries whose files vanished
+for (const k of Object.keys(cache)) {
+  if (!fs.existsSync(k)) delete cache[k];
+}
+try {
+  // Private: the cache holds titles and first prompts from 0600 transcripts.
+  fs.mkdirSync(CACHE_DIR, { recursive: true, mode: 0o700 });
+  try { fs.chmodSync(CACHE_DIR, 0o700); } catch {}
+  const tmp = CACHE_FILE + '.tmp.' + process.pid;
+  fs.writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600, flag: 'wx' });
+  fs.renameSync(tmp, CACHE_FILE);
+} catch {}
+
+sessions.sort((a, b) => b.mtime - a.mtime);
+const top = sessions.slice(0, LIMIT);
+// Claude Code sets CLAUDE_CODE_SESSION_ID; CLAUDE_SESSION_ID is the older name.
+const SELF = process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || '';
+
+if (AS_JSON) {
+  console.log(JSON.stringify(top, null, 2));
+  process.exit(0);
+}
+
+const ago = ms => {
+  const m = Math.round((now - ms) / 60000);
+  if (m < 60) return `${m}m`;
+  if (m < 1440) return `${Math.round(m / 60)}h`;
+  return `${Math.round(m / 1440)}d`;
+};
+const DOT = { active: '\x1b[32m●\x1b[0m', recent: '\x1b[33m○\x1b[0m', idle: '\x1b[2m·\x1b[0m' };
+
+console.log(`🐡 fugu radar — ${sessions.length} sessions${ONLY_ACTIVE ? ' (active/recent)' : ''}, newest ${top.length}:\n`);
+for (const s of top) {
+  const proj = s.project.split('/').slice(-2).join('/');
+  const me = s.id === SELF ? ' \x1b[36m◀ you\x1b[0m' : '';
+  console.log(`  ${DOT[s.status]} ${ago(s.mtime).padStart(4)}  ${proj.padEnd(26).slice(0, 26)}  ${String(s.messages).padStart(4)}msg  ${s.title.slice(0, 60)}${me}`);
+  console.log(`         \x1b[2mclaude --resume ${s.id}\x1b[0m`);
+}
+console.log(`\n  \x1b[2m● <1m  ○ <1h  · idle   fork: claude --resume <id> --fork-session\x1b[0m`);
