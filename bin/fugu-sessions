@@ -198,9 +198,9 @@ const DOT = { active: '\x1b[32m●\x1b[0m', recent: '\x1b[33m○\x1b[0m', idle: 
 
 console.log(`🐡 fugu radar — ${sessions.length} sessions${ONLY_ACTIVE ? ' (active/recent)' : ''}, newest ${top.length}:\n`);
 for (const s of top) {
-  const proj = s.project.split('/').slice(-2).join('/');
+  const proj = s.project;
   const me = s.id === SELF ? ' \x1b[36m◀ you\x1b[0m' : '';
-  console.log(`  ${DOT[s.status]} ${ago(s.mtime).padStart(4)}  ${proj.padEnd(26).slice(0, 26)}  ${String(s.messages).padStart(4)}msg  ${s.title.slice(0, 60)}${me}`);
+  console.log(`  ${DOT[s.status]} ${ago(s.mtime).padStart(4)}  ${proj}  ${String(s.messages).padStart(4)}msg  ${s.title.slice(0, 60)}${me}`);
   console.log(`         \x1b[2mclaude --resume ${s.id}\x1b[0m`);
 }
 console.log(`\n  \x1b[2m● <1m  ○ <1h  · idle   fork: claude --resume <id> --fork-session\x1b[0m`);

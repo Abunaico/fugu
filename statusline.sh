@@ -107,7 +107,7 @@ case "$cost" in *[!0-9.]*|'') cost="";; esac
 
 dir="?"
 if [ -n "$cwd" ]; then
-  dir="${cwd/#$HOME/~}"; dir="${dir##*/}"; [ -z "$dir" ] && dir="/"
+  dir="${cwd/#$HOME/~}"; [ -z "$dir" ] && dir="/"
 fi
 
 # --- git: cached, never inline (SMB mounts here can hang in D-state) ---

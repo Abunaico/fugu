@@ -400,7 +400,7 @@ ls "$TH/.claude/"settings.json.bak.* >/dev/null 2>&1 && ok "install backs up set
 [ -x "$TH/.fugu/bin/statusline" ] && ok "launcher executable" || bad "launcher executable"
 chk "root seeded to this copy" "$(cat "$TH/.fugu/root")" "$PWD"
 out=$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TH XDG_CACHE_HOME=$TH/c "$TH/.fugu/bin/statusline" | strip_ansi | head -1)
-case "$out" in *'📁 tmp'*) ok "launcher renders the HUD";; *) bad "launcher renders the HUD (got: $out)";; esac
+case "$out" in *'📁 /tmp'*) ok "launcher renders the HUD";; *) bad "launcher renders the HUD (got: $out)";; esac
 hudcli status >/dev/null; chk "status healthy → exit 0" "$?" "0"
 # a plugin update moves the copy: the next session records it, the launcher follows
 NEW="$TH/newcopy"; mkdir -p "$NEW"; printf '#!/bin/bash\ncat >/dev/null; echo NEWCOPY\n' > "$NEW/statusline.sh"
@@ -411,7 +411,7 @@ mkdir -p "$TH/.fugu"; touch "$TH/.fugu/disabled"; NEW2="$TH/newer"; mkdir -p "$N
 HOME=$TH CLAUDE_PLUGIN_ROOT=$NEW2 ./hooks/banner.sh >/dev/null; rm -f "$TH/.fugu/disabled"
 chk "copy recorded even while muted" "$(cat "$TH/.fugu/root")" "$NEW2"
 rm -rf "$NEW2"
-chk "launcher falls back when recorded copy is gone" "$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TH XDG_CACHE_HOME=$TH/c "$TH/.fugu/bin/statusline" | strip_ansi | head -1 | grep -c '📁 tmp')" "1"
+chk "launcher falls back when recorded copy is gone" "$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TH XDG_CACHE_HOME=$TH/c "$TH/.fugu/bin/statusline" | strip_ansi | head -1 | grep -c '📁 /tmp')" "1"
 HOME=$TH CLAUDE_PLUGIN_ROOT="$TH/nope" ./hooks/banner.sh >/dev/null
 chk "bogus plugin root not recorded" "$(cat "$TH/.fugu/root")" "$NEW2"
 # migration from a fixed-path install; foreign statusLine is refused
