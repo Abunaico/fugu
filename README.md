@@ -5,8 +5,9 @@ Simple as Grokbot. Powerful as Hermes. Meme as OpenClaw. The *abunai* fish:
 prepared wrong, it kills. So FUGU watches your gauges, and it inflates as your context fills.
 
 ```
-🐡 Opus 5.5 [high · Explanatory] · 📁 fugu · main ✔ · 👤 you@example.com (max)
+🐡 Opus 5.5 [high · Explanatory] · 👤 you@example.com (max)
 ██░░░░░░░░ 17% 5h 62% ⏰1h30m →88% 7d 41% ⏰3d0h →71% cache 52m · $4.12
+📁 fugu · main ✔
 ```
 
 FUGU is a Claude Code plugin. It doesn't wrap, patch, or proxy the `claude` binary. Everything
@@ -17,7 +18,7 @@ your disk. No OAuth token handling, no credential intermediation, no network cal
 
 | Piece | What it does |
 |---|---|
-| **HUD** (`statusline.sh`) | Two-line statusline. Line 1: model, effort level and output style, directory, git branch and dirty flag, the Anthropic account this session bills to. Line 2: color-coded context bar; 5h/7d rate-limit meters with reset countdown (⏰) and where you'll land at the current pace (→); how long until the prompt cache goes cold; session cost. The fish puffs up; the toxin ☠️ comes out at 90% context. |
+| **HUD** (`statusline.sh`) | Three-line statusline. Line 1: model, effort level and output style, the Anthropic account this session bills to. Line 2: color-coded context bar; 5h/7d rate-limit meters with reset countdown (⏰) and where you'll land at the current pace (→); how long until the prompt cache goes cold; session cost. Line 3: directory and git branch/dirty flag. The fish puffs up; the toxin ☠️ comes out at 90% context. |
 | **Context + cache viewer** (`bin/fugu-context`) | What is filling the context window, how well the prompt cache is holding, and why it broke when it did. Per-turn usage, hit rate, cache breaks with a likely cause, largest context items, subagent usage. |
 | **Accounts** (`bin/fugu-accounts`) | Every Claude Code login on the machine (default config plus profile dirs) with its last-known 5h/7d usage and reset times, side by side. Tells you which account has room without touching a single token. |
 | **Fleet dashboard** (`subagent-statusline.sh`) | Every running subagent as `⚡ finder [opus-5] ▸ running · 42k 21%`. Fits the terminal: model, context %, tokens, and status drop in that order, then the name is clipped with `…`. Applied automatically while the plugin is enabled. |
