@@ -1,6 +1,6 @@
 #!/bin/bash
 # fugu HUD — Claude Code statusline
-# stdin: session JSON. Two lines out: identity, gauges.
+# stdin: session JSON. Three lines out: identity, gauges, path (+ git).
 # Render path never blocks: git status is served from cache and refreshed
 # by a detached background job — a hung SMB mount can never stall the HUD.
 # Meme dial: FUGU_MOOD=off deflates the fish. At 90% context the toxin comes out.
@@ -347,10 +347,10 @@ render() { # fits SEG / PRI / ALT / DEP (global arrays), prints one line
 
 # SEG: segment · PRI: priority (99 never drops) · ALT: shorter form · DEP: index
 # of the segment it qualifies (shown only alongside it)
-SEG=( "$claw$BOLD$CYN$model$RST"  "$mode_seg"   " ${DIM}·${RST} 📁 $dir"  "$git_seg"  "$acct_seg"  "$acct_plan_seg" )
-PRI=( 99                          3             98                        5           6            4 )
-ALT=( ""                          "$mode_short" ""                        ""          ""           "" )
-DEP=( ""                          ""            ""                        ""          ""           4 )
+SEG=( "$claw$BOLD$CYN$model$RST"  "$mode_seg"   "$acct_seg"  "$acct_plan_seg" )
+PRI=( 99                          3             6            4 )
+ALT=( ""                          "$mode_short" ""           "" )
+DEP=( ""                          ""            ""           2 )
 render
 
 bar_seg="$bc$bar$RST "
@@ -358,4 +358,11 @@ SEG=( "$bar_seg" "$pct%" "$h5_pct" "$h5_reset" "$h5_pace" "$d7_pct" "$d7_reset" 
 PRI=( 13         99      50        12          10         40        11          9          20           15 )
 ALT=( ""         ""      ""        ""          ""         ""        ""          ""         ""           "" )
 DEP=( ""         ""      ""        2           2          ""        5           5          ""           "" )
+render
+
+# Directory (and git) get their own third line.
+SEG=( "📁 $dir"  "$git_seg" )
+PRI=( 99          5 )
+ALT=( ""          "" )
+DEP=( ""          "" )
 render
