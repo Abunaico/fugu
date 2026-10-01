@@ -5,7 +5,23 @@ description: List fugu's commands and what each one does. Use when the user says
 
 # fugu help
 
-Show this table as-is, then answer any follow-up question about a specific command.
+Show the banner, then the About line, then the table as-is. Answer any follow-up
+question about a specific command afterward.
+
+```
+  🐡  F U G U
+  ─────────────────────────────
+  Fleet & Usage Gauge Utility
+```
+
+**About:** v0.6.0 · MIT · Anthony Shafer · github.com/Abunaico/fugu
+
+Harness chrome for Claude Code — a statusline HUD, a subagent fleet dashboard, and a
+cross-project session radar. It doesn't wrap, patch, or proxy the `claude` binary:
+everything runs inside the unmodified CLI under your own login, reading files Claude
+Code already writes to disk. No OAuth handling, no credential intermediation, no
+network calls. The name is the *abunai* fish — prepared wrong, it kills — so FUGU
+watches your gauges and puffs up as context fills, same as the fish under threat.
 
 | Command | What it does |
 |---|---|
