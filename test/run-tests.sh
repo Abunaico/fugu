@@ -492,6 +492,29 @@ hudcli install >/dev/null
 [ -L "$TH/.claude/settings.json" ] && [ "$(jq -r '.statusLine.command | length > 0' "$TH/real.json")" = true ] && ok "symlinked settings edited at target" || bad "symlinked settings edited at target"
 rm -rf "$TH"
 
+echo "— autoname —"
+TN="$SANDBOX/an"; mkdir -p "$TN/.fugu"
+printf '#!/bin/sh\ncat >/dev/null; printf "Sure:\\n  irt bd reach!! pkg\\n"\n' > "$TN/stub"; chmod +x "$TN/stub"
+SID=aaaaaaaa-1111-2222-3333-444444444444; TR_="$TN/t.jsonl"; : > "$TR_"
+an() { jq -cn --arg p "$1" --arg s "${2:-$SID}" --arg t "$TR_" '{session_id:$s, transcript_path:$t, cwd:"/x/Infernored", prompt:$p}' \
+  | HOME=$TN FUGU_AUTONAME_CLAUDE=$TN/stub node bin/fugu-autoname hook; }
+waitp() { for _ in $(seq 50); do [ -f "$TN/.fugu/autoname/$SID.pending" ] && return; sleep 0.1; done; }
+chk "slash command not counted" "$(an /fugu:on)$(an one)$(an two)" ""
+chk "no title before 3 prompts" "$(jq '.prompts|length' "$TN/.fugu/autoname/$SID.json")" "2"
+an three >/dev/null; waitp
+chk "worker normalizes name" "$(jq -r .title "$TN/.fugu/autoname/$SID.pending")" "IRT-BD-REACH-PKG"
+chk "next prompt applies title" "$(an four | jq -r .hookSpecificOutput.sessionTitle)" "IRT-BD-REACH-PKG"
+echo '{"type":"custom-title","customTitle":"IRT-BD-REACH-PKG"}' >> "$TR_"; an mid >/dev/null
+chk "own title not mistaken for user's" "$(jq .done "$TN/.fugu/autoname/$SID.json")" "false"
+echo '{"type":"custom-title","customTitle":"MINE"}' >> "$TR_"
+an five >/dev/null
+chk "user rename wins" "$(jq .done "$TN/.fugu/autoname/$SID.json")" "true"
+chk "child process never names" "$(FUGU_AUTONAME_CHILD=1 an x bbbbbbbb-1; ls "$TN/.fugu/autoname" | grep -c bbbbbbbb)" "0"
+echo 'autoname=off' > "$TN/.fugu/config"; an x cccccccc-1 >/dev/null
+chk "autoname=off respected" "$(ls "$TN/.fugu/autoname" | grep -c cccccccc)" "0"
+chk "bad session id ignored" "$(an x '../../etc'; ls "$TN/.fugu" | grep -c etc)" "0"
+rm -rf "$TN"
+
 echo ""
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

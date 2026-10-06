@@ -30,6 +30,7 @@ const FEATURES = [
   ['fleet',       'Subagent fleet rows'],
   ['banner',      'Session start banner'],
   ['watch',       'Cross-session watch notifications'],
+  ['autoname',    'Auto-name sessions from their first prompts'],
 ];
 const KEYS = new Set(FEATURES.map(f => f[0]));
 
