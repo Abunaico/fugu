@@ -20,9 +20,14 @@ strip_ansi() { LC_ALL=C sed $'s/\033\\[[0-9;]*m//g'; }
 echo "— statusline degradation —"
 out=$(echo 'not json' | ./statusline.sh 2>&1); echo "$out" | grep -q 'jq:' && bad "garbage stdin silent" || ok "garbage stdin silent"
 out=$(echo -n '' | ./statusline.sh 2>&1); echo "$out" | grep -qE 'error|expected' && bad "empty stdin silent" || ok "empty stdin silent"
-out=$(echo '{}' | ./statusline.sh 2>/dev/null | head -1); echo "$out" | grep -q '📁 ?' && ok "empty cwd → ?" || bad "empty cwd → ? (got: $out)"
+out=$(echo '{}' | ./statusline.sh 2>/dev/null | tail -1); echo "$out" | grep -q '📁 ?' && ok "empty cwd → ?" || bad "empty cwd → ? (got: $out)"
 out=$(echo '{"workspace":{"current_dir":"/tmp"},"context_window":{"used_tokens":190000,"context_window_size":200000}}' | ./statusline.sh | head -1)
 echo "$out" | grep -q '☠️' && ok "toxin ≥90% (95% input)" || bad "toxin ≥90% (95% input)"
+
+echo "— watch titles —"
+# clean() is evaluated on its own: running fugu-watch would start polling.
+cl=$(grep '^const clean' bin/fugu-watch)
+chk "watch keeps hyphens, drops C0/C1" "$(node -e "$cl; process.stdout.write(clean('fix-auth\u009b-bug\u0007'))")" "fix-auth-bug"
 
 echo "— statusline injection —"
 out=$(python3 -c 'import json;print(json.dumps({"model":{"display_name":"Ev]0;pwnil"},"workspace":{"current_dir":"/tmp"}}))' | ./statusline.sh | head -1)
@@ -340,7 +345,8 @@ TX=$(mktemp -d)
 hasctl() { LC_ALL=C grep -q $'\x1b\\|\r\\|\xc2[\x80-\x9f]'; }
 out=$(python3 -c 'import json;print(json.dumps({"model":{"display_name":"Op\u009b2J\u009d0;T\u009c"},"effort":{"level":"hi\rFAKE"},"output_style":{"name":"\u001b]0;x\u0007"},"workspace":{"current_dir":"/tmp/d\u009bx\ry"}}))' | HOME=$TX XDG_CACHE_HOME=$TX/c ./statusline.sh | LC_ALL=C sed $'s/\033\\[[0-9;]*m//g')
 echo "$out" | hasctl && bad "HUD strips C1 + CR from stdin fields" || ok "HUD strips C1 + CR from stdin fields"
-chk "HUD stays two lines" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
+# Injected CR/LF must not add lines: compact is always exactly three.
+chk "injected CR/LF adds no HUD lines" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "3"
 printf '%s' '{"oauthAccount":{"emailAddress":"a\u009b31m\u009d0;pwn\u009c\rEVIL@x.com"}}' > "$TX/.claude.json"
 out=$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TX XDG_CACHE_HOME=$TX/c ./statusline.sh | LC_ALL=C sed $'s/\033\\[[0-9;]*m//g')
 echo "$out" | hasctl && bad "HUD strips C1 from account email" || ok "HUD strips C1 from account email"
@@ -450,7 +456,7 @@ chk "install keeps other keys" "$(jq -c '[.permissions.allow[0], .model]' "$TH/.
 ls "$TH/.claude/"settings.json.bak.* >/dev/null 2>&1 && ok "install backs up settings" || bad "install backs up settings"
 [ -x "$TH/.fugu/bin/statusline" ] && ok "launcher executable" || bad "launcher executable"
 chk "root seeded to this copy" "$(cat "$TH/.fugu/root")" "$PWD"
-out=$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TH XDG_CACHE_HOME=$TH/c "$TH/.fugu/bin/statusline" | strip_ansi | head -1)
+out=$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TH XDG_CACHE_HOME=$TH/c "$TH/.fugu/bin/statusline" | strip_ansi | tail -1)
 case "$out" in *'📁 /tmp'*) ok "launcher renders the HUD";; *) bad "launcher renders the HUD (got: $out)";; esac
 hudcli status >/dev/null; chk "status healthy → exit 0" "$?" "0"
 # a plugin update moves the copy: the next session records it, the launcher follows
@@ -462,7 +468,7 @@ mkdir -p "$TH/.fugu"; touch "$TH/.fugu/disabled"; NEW2="$TH/newer"; mkdir -p "$N
 HOME=$TH CLAUDE_PLUGIN_ROOT=$NEW2 ./hooks/banner.sh >/dev/null; rm -f "$TH/.fugu/disabled"
 chk "copy recorded even while muted" "$(cat "$TH/.fugu/root")" "$NEW2"
 rm -rf "$NEW2"
-chk "launcher falls back when recorded copy is gone" "$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TH XDG_CACHE_HOME=$TH/c "$TH/.fugu/bin/statusline" | strip_ansi | head -1 | grep -c '📁 /tmp')" "1"
+chk "launcher falls back when recorded copy is gone" "$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TH XDG_CACHE_HOME=$TH/c "$TH/.fugu/bin/statusline" | strip_ansi | tail -1 | grep -c '📁 /tmp')" "1"
 HOME=$TH CLAUDE_PLUGIN_ROOT="$TH/nope" ./hooks/banner.sh >/dev/null
 chk "bogus plugin root not recorded" "$(cat "$TH/.fugu/root")" "$NEW2"
 # migration from a fixed-path install; foreign statusLine is refused
