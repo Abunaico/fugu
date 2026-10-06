@@ -14,7 +14,7 @@ question about a specific command afterward.
   Fleet & Usage Gauge Utility
 ```
 
-**About:** v0.7.0 · MIT · Anthony Shafer · github.com/Abunaico/fugu
+**About:** v0.7.1 · MIT · Anthony Shafer · github.com/Abunaico/fugu
 
 Harness chrome for Claude Code — a statusline HUD, a subagent fleet dashboard, and a
 cross-project session radar. It doesn't wrap, patch, or proxy the `claude` binary:
