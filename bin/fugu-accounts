@@ -99,7 +99,6 @@ for (const [dir, label] of dirs) {
 
 if (AS_JSON) { console.log(JSON.stringify(rows, null, 2)); process.exit(0); }
 
-// --- render ---
 const tty = process.stdout.isTTY && !process.env.NO_COLOR;
 const C = (code, s) => tty ? `\x1b[${code}m${s}\x1b[0m` : s;
 const dim = s => C('2', s);

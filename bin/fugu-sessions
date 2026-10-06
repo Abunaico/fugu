@@ -28,7 +28,6 @@ const CACHE_FILE = path.join(CACHE_DIR, 'sessions-cache.json');
 const HEAD_BYTES = 4096;
 const SNIPPET_CAP = 100;
 
-// --- cache ---
 let cache = {};
 if (!REINDEX) {
   try { cache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')); } catch {}
@@ -62,6 +61,8 @@ function applyLine(line, st) {
     const c = e.message.content;
     let t = typeof c === 'string' ? c
       : Array.isArray(c) ? (c.find(p => p.type === 'text') || {}).text || '' : '';
+    // Slash commands and ! shell input are wrapped in tags; the summary should be
+    // the first thing the user actually typed, so wait for a plain prompt.
     if (t && !/<bash-input>|<local-command-caveat>|<command-name>/.test(t.slice(0, 4096))) {
       t = t.slice(0, 4096);
       t = t.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').replace(/\s+/g, ' ').trim();
@@ -109,7 +110,6 @@ function indexFile(fp, st8, prev) {
   finally { try { fs.closeSync(fd); } catch {} }
 }
 
-// --- scan ---
 const sessions = [];
 let dirs = [];
 try { dirs = fs.readdirSync(ROOT); } catch { console.error(`no ${ROOT}`); process.exit(1); }
@@ -165,7 +165,6 @@ for (const d of dirs) {
   }
 }
 
-// prune cache entries whose files vanished
 for (const k of Object.keys(cache)) {
   if (!fs.existsSync(k)) delete cache[k];
 }

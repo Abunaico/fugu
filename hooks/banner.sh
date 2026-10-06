@@ -1,8 +1,8 @@
 #!/bin/bash
 # fugu session banner — SessionStart hook.
-# stdout from a SessionStart hook is added to Claude's context, so keep it tiny.
-# NOTE: this hook's stdout enters model context — treat as a trust boundary.
-# Any dynamic value added here must be control-char-stripped first.
+# Its stdout is added to Claude's context: keep it tiny, and treat it as a trust
+# boundary (any dynamic value added here must be control-char-stripped first).
+
 # Record which fugu copy Claude Code loaded this session, for the HUD launcher
 # (~/.fugu/bin/statusline). Done before any mute check so updates are picked up
 # even while fugu is quiet. One write, only when the copy changed.
