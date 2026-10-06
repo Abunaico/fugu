@@ -36,6 +36,8 @@ your disk. No OAuth token handling, no credential intermediation, no network cal
 | `/fugu:sessions` | Scan the session radar |
 | `/fugu:open` | Resume or fork a session into a new tmux/Warp pane |
 | `/fugu:fleet` | Explain or tune the subagent dashboard |
+| `/fugu:layout` | List, switch, or make HUD layouts |
+| `/fugu:detailed`, `/fugu:compact` | Layout shortcuts |
 | `/fugu:settings` | Turn individual features on or off |
 | `/fugu:off`, `/fugu:on` | Mute or unmute everything without uninstalling |
 | `/fugu:help` | List every fugu command |
@@ -128,6 +130,23 @@ What's measured and what's estimated:
   `prompt_cache.expires_at` when present; on older versions it falls back to the last cache
   write in the transcript (only the last 256 KB is read).
 - **`[high · Explanatory]`**: effort level and output style. The default style isn't shown.
+- **Layouts.** What goes on which line is a small YAML file, one per layout. Built-in:
+  `compact` (default), `detailed` (one labeled line per gauge, in words), and `all` (every
+  widget, like `/status`). Make your own with `fugu-config layout new <name>` and edit
+  `~/.fugu/layouts/<name>.yaml`; switch with `/fugu:layout <name>`. Format and the widget
+  list: [layouts/README.md](layouts/README.md). `FUGU_LAYOUT=<name>` overrides per terminal.
+
+  ```yaml
+  # detailed.yaml
+  lines:
+    - [fish, model, mode, ·, account, plan]
+    - context:      [context-bar, context-full, ·, context-tokens, ·, context-warning]
+    - 5-hour limit: [5h-used, ·, 5h-resets, 5h-clock, ·, 5h-pace-words]
+    - weekly limit: [7d-used, ·, 7d-resets, 7d-clock, ·, 7d-pace-words]
+    - prompt cache: [cache-words, cache-why]
+    - cost:         [cost-words]
+    - [dir, ·, git]
+  ```
 - **Fits the terminal.** Claude Code passes `COLUMNS` and cuts off anything wider, so the HUD
   sheds detail as the terminal narrows instead of losing the end of the line: pace projections
   go first, then reset countdowns, the bar, cost, and cache; on line 1 the output style, plan,

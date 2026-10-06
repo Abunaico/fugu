@@ -100,6 +100,7 @@ function install() {
   const refresh = prev && Number.isFinite(prev.refreshInterval) ? prev.refreshInterval : 30;
   s.obj.statusLine = { type: 'command', command: LAUNCHER, refreshInterval: refresh };
   const after = Object.keys(s.obj).length;
+  // Guard against clobbering: the edit may add statusLine or replace it, nothing else.
   if (after !== before && after !== before + 1) { console.error('fugu-hud: key count check failed; not writing'); process.exit(1); }
   writeSettings(s, s.obj);
   console.log(`🐡 HUD installed: ${tilde(SETTINGS)} → ${tilde(LAUNCHER)}`);
@@ -158,6 +159,9 @@ function status() {
   let offs = [];
   try { offs = fs.readFileSync(path.join(FUGU, 'config'), 'utf8').split('\n').filter(l => /=\s*off\s*$/.test(l)).map(l => l.split('=')[0].trim()); } catch {}
   if (offs.length) console.log(`  ${C('2', '·')} switched off: ${offs.map(clean).join(', ')} (/fugu:settings)`);
+  let layout = 'compact';
+  try { const m = /^\s*layout\s*=\s*([A-Za-z0-9_-]+)\s*$/m.exec(fs.readFileSync(path.join(FUGU, 'config'), 'utf8')); if (m) layout = m[1]; } catch {}
+  console.log(`  ${C('2', '·')} layout: ${layout}${process.env.FUGU_LAYOUT ? ` (FUGU_LAYOUT=${clean(process.env.FUGU_LAYOUT)} here)` : ''} (/fugu:layout)`);
   console.log(problems ? `\n  ${problems} problem${problems > 1 ? 's' : ''}.` : '\n  healthy.');
   return problems;
 }

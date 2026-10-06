@@ -29,7 +29,7 @@ out=$(python3 -c 'import json;print(json.dumps({"model":{"display_name":"Ev]0;p
 case "$out" in *$'\x1b]'*) bad "ESC stripped from model name";; *) ok "ESC stripped from model name";; esac
 
 echo "— statusline render path never blocks —"
-grep -n 'git ' statusline.sh | grep -v '(' | grep -qv '#' && bad "inline git found" || ok "git only in background subshell"
+grep -nE 'git (branch|status|rev-parse|diff|log|config|-C)' statusline.sh | grep -v '(' | grep -qv '#' && bad "inline git found" || ok "git only in background subshell"
 
 echo "— fleet —"
 out=$(echo '{"tasks":[{"id":"t1","name":"f","status":"running","tokenCount":42300,"contextWindowSize":200000}]}' | ./subagent-statusline.sh)
@@ -282,6 +282,57 @@ chk "fugu-config on removes key" "$(HOME=$TS node bin/fugu-config --json | jq -r
 HOME=$TS node bin/fugu-config off nope >/dev/null 2>&1; chk "unknown feature rejected" "$?" "2"
 HOME=$TS node bin/fugu-config reset >/dev/null
 chk "reset turns all on" "$(HOME=$TS node bin/fugu-config --json | jq '[.[]] | all')" "true"
+
+echo "— layouts —"
+mkdir -p "$TS/.fugu/layouts"
+lay() { echo "$SJ" | HOME=$TS XDG_CACHE_HOME=$TS/cache "$@" ./statusline.sh | strip_ansi; }
+out=$(cfgrun); case "$out" in *'5-hour limit'*) bad "compact by default";; *) ok "compact by default";; esac
+out=$(cfgrun 'layout=detailed')
+for want in '5-hour limit 60% used' 'resets in' 'cost         $1.50 this session'; do
+  case "$out" in *"$want"*) ok "detailed shows '$want'";; *) bad "detailed shows '$want' (got: $out)";; esac; done
+case "$out" in *'⏰'*) bad "detailed drops compact gauges";; *) ok "detailed drops compact gauges";; esac
+out=$(cfgrun 'layout=detailed' 'hud.cost=off'); case "$out" in *'this session'*) bad "layouts honor hud.cost=off";; *) ok "layouts honor hud.cost=off";; esac
+out=$(cfgrun 'layout=detailed' 'hud.reset=off'); case "$out" in *'resets in'*) bad "layouts honor hud.reset=off";; *) ok "layouts honor hud.reset=off";; esac
+case "$(cfgrun 'layout=detailed')" in *'weekly limit'*) bad "line with no data is skipped";; *) ok "line with no data is skipped";; esac
+out=$(printf 'layout=detailed\n' > "$TS/.fugu/config"; lay env FUGU_LAYOUT=compact)
+case "$out" in *'5-hour limit'*) bad "FUGU_LAYOUT overrides config";; *) ok "FUGU_LAYOUT overrides config";; esac
+out=$(cfgrun 'layout=all'); case "$out" in *'version'*'session'*'code changes'*) bad "all skips empty lines";; *'session'*) ok "all layout renders";; *) bad "all layout renders (got: $out)";; esac
+# Gauge lines only (no emoji), counted in characters rather than bytes.
+w=$(printf 'layout=detailed\n' > "$TS/.fugu/config"; lay env COLUMNS=50 | sed '1d;$d' |
+  { m=0; while IFS= read -r l; do [ ${#l} -gt $m ] && m=${#l}; done; echo $m; })
+[ "$w" -le 46 ] && ok "detailed fits 50 columns" || bad "detailed fits 50 columns (widest $w)"
+# A user layout: labels, separators that vanish with an empty widget, quoted text, typos.
+cat > "$TS/.fugu/layouts/mine.yaml" <<'EOF'
+# mine
+lines:
+  - [model, "::", cost]       # inline comment
+  - spend: [cost, ·, git, |, 5h]
+  - [nosuch]
+EOF
+out=$(cfgrun 'layout=mine')
+case "$out" in *'Claude :: $1.50'*) ok "quoted literal between widgets";; *) bad "quoted literal between widgets (got: $out)";; esac
+case "$out" in *'spend $1.50 | 5h 60%'*) ok "separator before an empty widget is held for the next";; *) bad "separator before an empty widget is held for the next (got: $out)";; esac
+case "$out" in *'?nosuch'*) ok "unknown widget shows as ?name";; *) bad "unknown widget shows as ?name";; esac
+printf '%s\n' 'lines:' '  - [model]' > "$TS/.fugu/layouts/compact.yaml"
+out=$(cfgrun); case "$out" in *'5h'*) bad "user layout overrides a built-in";; *Claude*) ok "user layout overrides a built-in";; esac
+rm -f "$TS/.fugu/layouts/compact.yaml"
+out=$(cfgrun 'layout=nope'); case "$out" in *"layout 'nope' not found"*'5h 60%'*|*'5h 60%'*"layout 'nope' not found"*) ok "missing layout falls back to compact with a note";; *) bad "missing layout falls back (got: $out)";; esac
+out=$(cfgrun 'layout=../../etc/passwd'); case "$out" in *'5h 60%'*) ok "layout name can't escape the layouts dir";; *) bad "layout name can't escape the layouts dir";; esac
+out=$(echo "$SJ" | HOME=$TS XDG_CACHE_HOME=$TS/cache bash -c 'cp statusline.sh "$HOME/sl.sh"; printf "layout=detailed\n" > "$HOME/.fugu/config"; bash "$HOME/sl.sh"' | strip_ansi)
+case "$out" in *'5h 60%'*) ok "no layouts folder still renders compact";; *) bad "no layouts folder still renders compact (got: $out)";; esac
+rm -f "$TS/.fugu/config"
+HOME=$TS node bin/fugu-config layout detailed >/dev/null
+chk "fugu-config layout writes layout=" "$(grep -c '^layout=detailed$' "$TS/.fugu/config")" "1"
+HOME=$TS node bin/fugu-config off hud.cost >/dev/null
+chk "feature switches keep the layout" "$(grep -c '^layout=detailed$' "$TS/.fugu/config")" "1"
+HOME=$TS node bin/fugu-config layout nope >/dev/null 2>&1; chk "unknown layout refused" "$?" "2"
+HOME=$TS node bin/fugu-config layout new ../x >/dev/null 2>&1; chk "bad new layout name refused" "$?" "2"
+HOME=$TS node bin/fugu-config layout new copy >/dev/null
+chk "layout new copies the active one" "$(grep -c '5-hour limit' "$TS/.fugu/layouts/copy.yaml")" "1"
+HOME=$TS node bin/fugu-config layout new copy >/dev/null 2>&1; chk "layout new never overwrites" "$?" "2"
+HOME=$TS node bin/fugu-config layout compact >/dev/null
+chk "compact (the default) writes no layout line" "$(grep -c '^layout=' "$TS/.fugu/config")" "0"
+HOME=$TS node bin/fugu-config reset >/dev/null
 rm -rf "$TS"
 
 echo "— hardening (review fixes) —"

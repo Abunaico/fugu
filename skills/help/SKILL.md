@@ -14,7 +14,7 @@ question about a specific command afterward.
   Fleet & Usage Gauge Utility
 ```
 
-**About:** v0.6.0 · MIT · Anthony Shafer · github.com/Abunaico/fugu
+**About:** v0.7.0 · MIT · Anthony Shafer · github.com/Abunaico/fugu
 
 Harness chrome for Claude Code — a statusline HUD, a subagent fleet dashboard, and a
 cross-project session radar. It doesn't wrap, patch, or proxy the `claude` binary:
@@ -26,6 +26,8 @@ watches your gauges and puffs up as context fills, same as the fish under threat
 | Command | What it does |
 |---|---|
 | `/fugu:hud` | Check the HUD statusline; `install`, `repair`, `remove` |
+| `/fugu:layout` | List, switch, or make HUD layouts (one YAML file each) |
+| `/fugu:detailed`, `/fugu:compact` | Shortcuts: labeled line per gauge, or one gauge line (default) |
 | `/fugu:settings` | Turn individual features on or off (HUD segments, fleet rows, banner, watch) |
 | `/fugu:context` | What's filling this session's context, and how the prompt cache is holding |
 | `/fugu:accounts` | Every Claude Code login on this machine with its 5h/7d usage and reset times |
