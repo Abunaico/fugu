@@ -562,3 +562,5 @@ layout_line() { # label, items joined by 0x1f
 
 for (( li = 0; li < ${#L_LBL[@]}; li++ )); do layout_line "${L_LBL[li]}" "${L_ITEMS[li]}"; done
 [ -n "$layout_note" ] && printf '%s\n' "${YLW}🐡 ${layout_note}${RST}"
+# Claude Code hides the HUD on a non-zero exit, and the test above leaves 1 behind.
+exit 0

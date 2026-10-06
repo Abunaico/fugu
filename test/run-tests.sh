@@ -21,6 +21,7 @@ echo "— statusline degradation —"
 out=$(echo 'not json' | ./statusline.sh 2>&1); echo "$out" | grep -q 'jq:' && bad "garbage stdin silent" || ok "garbage stdin silent"
 out=$(echo -n '' | ./statusline.sh 2>&1); echo "$out" | grep -qE 'error|expected' && bad "empty stdin silent" || ok "empty stdin silent"
 out=$(echo '{}' | ./statusline.sh 2>/dev/null | tail -1); echo "$out" | grep -q '📁 ?' && ok "empty cwd → ?" || bad "empty cwd → ? (got: $out)"
+echo '{"workspace":{"current_dir":"/tmp"}}' | ./statusline.sh >/dev/null 2>&1 && ok "HUD exits 0" || bad "HUD exits non-zero (Claude Code hides it)"
 out=$(echo '{"workspace":{"current_dir":"/tmp"},"context_window":{"used_tokens":190000,"context_window_size":200000}}' | ./statusline.sh | head -1)
 echo "$out" | grep -q '☠️' && ok "toxin ≥90% (95% input)" || bad "toxin ≥90% (95% input)"
 
