@@ -95,3 +95,4 @@ tr[data-ft]{cursor:pointer} tr[data-ft]:focus td{background:var(--hover); outlin
   border-left:3px solid var(--line); box-shadow:-6px 0 0 var(--shadow); padding:16px}
 .drawer h2{margin-top:4px} .drawer .x{float:right; font:800 14px var(--pixel); background:var(--accent); color:#0B2350; border:3px solid var(--line);
   box-shadow:3px 3px 0 var(--shadow); cursor:pointer; padding:2px 9px}
+h1 .fish{width:48px; height:48px; vertical-align:middle; margin:-14px 4px -14px -8px}

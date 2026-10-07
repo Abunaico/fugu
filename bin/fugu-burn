@@ -537,10 +537,18 @@ ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = cha
   }
   let css = '';
   try { css = fs.readFileSync(path.join(F.FUGU_ROOT, 'lib', 'report.css'), 'utf8'); } catch {}
+  // The pixel fish ships inline (header and favicon) so the report stays one file.
+  let fish = '', icon = '';
+  try {
+    const svg = fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', 'fugu-pixel.svg'), 'utf8');
+    icon = `<link rel="icon" href="data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}">`;
+    fish = svg.replace(/<\?xml[^>]*>|<!--[\s\S]*?-->|<title>[\s\S]*?<\/title>/g, '')
+      .replace(/<svg\b[^>]*?>/, m => m.replace(/\s(width|height|role|aria-label)="[^"]*"/g, '').replace('<svg', '<svg class="fish" aria-hidden="true" focusable="false"'));
+  } catch {}
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>fugu burn</title><style>
+<title>fugu burn</title>${icon}<style>
 ${css}</style></head><body>
-<h1>🐡 fugu burn · <em>${e(title)}</em></h1>${body}
+<h1>${fish || '🐡 '}fugu burn · <em>${e(title)}</em></h1>${body}
 <p class="note">Generated ${e(new Date().toISOString().slice(0, 16).replace('T', ' '))} from local Claude Code transcripts. Costs are estimates at Anthropic API list prices. Click a column to sort; indented rows stay with their group.</p>
 <script>
 function sortable(t) {
