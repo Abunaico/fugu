@@ -612,6 +612,9 @@ ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = cha
     const uri = f => `data:image/png;base64,${fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', f)).toString('base64')}`;
     const flat = uri('fugu-flat.png'), puff = uri('fugu-puff.png');
     icon = `<link rel="icon" href="${flat}">`;
+    // The terminal's ANSI puffer, pixel for pixel, as a faint fixed backdrop.
+    const bg = fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', 'fugu-puff-pixels.svg')).toString('base64');
+    css += `\n:root{--fugu-backdrop:url("data:image/svg+xml;base64,${bg}")}\n`;
     fish = `<span class="fishes" aria-hidden="true"><img class="flat" src="${flat}" alt=""><img class="puff" src="${puff}" alt=""></span>`;
   } catch {}
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

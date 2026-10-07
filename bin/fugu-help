@@ -38,6 +38,8 @@ const CUSTOMIZE = [
 ];
 
 const out = [];
+// --plain gets a one-color fish drawn for text-only views like the chat.
+if (PLAIN) { try { out.push(fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', 'fugu-mono.txt'), 'utf8').replace(/\n$/, '')); } catch {} }
 if (COLOR) {
   const art = process.argv.includes('--puff') ? 'fugu-puff.ans' : 'fugu-flat.ans';
   try { out.push(fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', art), 'utf8').replace(/\n$/, '')); } catch {}

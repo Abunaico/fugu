@@ -699,6 +699,8 @@ case "$hp" in *$'\x1b'*) bad "plain help has no escape codes";; *) ok "plain hel
 echo "$hp" | grep -q "FUGU v$(jq -r .version .claude-plugin/plugin.json)" && ok "help shows the manifest version" || bad "help shows the manifest version"
 echo "$hp" | grep -q 'fugu-burn --add-rule' && ok "help explains report customizations" || bad "help explains report customizations"
 chk "color help draws the fish" "$(node bin/fugu-help --color | grep -c '▀')" "9"
+chk "plain help starts with the one-color fish" "$(node bin/fugu-help --plain | head -13 | grep -c '█')" "11"
+grep -q 'url("data:image/svg+xml;base64,' "$TB/r.html" && ok "ANSI puffer backdrop embedded" || bad "ANSI puffer backdrop embedded"
 chk "--puff draws the puffed fish" "$(node bin/fugu-help --color --puff | grep -c '▀')" "12"
 chk "NO_COLOR skips the art" "$(NO_COLOR=1 node bin/fugu-help --color | grep -c '▀')" "0"
 chk "Claude Code ! commands get the fish" "$(CLAUDECODE=1 COLORTERM=truecolor node bin/fugu-help | grep -c '▀')" "9"
