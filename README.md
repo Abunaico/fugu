@@ -52,7 +52,7 @@ your disk. No OAuth token handling, no credential intermediation, no network cal
 | `/fugu:detailed`, `/fugu:compact` | Layout shortcuts |
 | `/fugu:settings` | Turn individual features on or off |
 | `/fugu:off`, `/fugu:on` | Mute or unmute everything without uninstalling |
-| `/fugu:help` | List every fugu command |
+| `/fugu:help` | List every fugu command; `fugu-help` in a terminal draws FUGU in full color (`--puff` for the puffed one) |
 
 ## Install
 

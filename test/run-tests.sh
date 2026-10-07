@@ -693,6 +693,15 @@ rb --recompile --json >/dev/null; chk "--recompile forces a call" "$(wc -l < "$T
 rb | grep -q 'customized: 3 edits' && ok "report says it was customized" || bad "report says it was customized"
 rm -rf "$TR"
 
+echo "— help —"
+hp=$(node bin/fugu-help --plain)
+case "$hp" in *$'\x1b'*) bad "plain help has no escape codes";; *) ok "plain help has no escape codes";; esac
+echo "$hp" | grep -q "FUGU v$(jq -r .version .claude-plugin/plugin.json)" && ok "help shows the manifest version" || bad "help shows the manifest version"
+echo "$hp" | grep -q 'fugu-burn --add-rule' && ok "help explains report customizations" || bad "help explains report customizations"
+chk "color help draws the fish" "$(node bin/fugu-help --color | grep -c '▀')" "9"
+chk "--puff draws the puffed fish" "$(node bin/fugu-help --color --puff | grep -c '▀')" "12"
+chk "NO_COLOR skips the art" "$(NO_COLOR=1 node bin/fugu-help --color | grep -c '▀')" "0"
+
 echo "— projects: nesting —"
 TN=$(mktemp -d); NP="$TN/.claude/projects/-n"; mkdir -p "$NP" "$TN/work/app/.git" "$TN/work/docs"
 nest() { printf '{"type":"user","timestamp":"%sT01:00:00Z","cwd":"%s","message":{"content":"a prompt long enough to clear the two hundred byte size gate of the radar scanner, padded out with more words"}}\n' "$D" "$2" > "$NP/$1.jsonl"; asst n$1 01:00:01Z claude-haiku-4-5 10 0 0 0 0 >> "$NP/$1.jsonl"; }

@@ -1,0 +1,56 @@
+#!/usr/bin/env node
+// fugu help: the pufferfish, the commands, and how to customize reports.
+// The fish is truecolor ANSI half-blocks drawn from the abunaico.com FUGU
+// (assets/fugu-flat.ans, fugu-puff.ans), shown only where colors work.
+// Usage: fugu-help [--puff] [--plain]
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const F = require('../lib/fugu.js');
+
+const PLAIN = process.argv.includes('--plain');
+const COLOR = !PLAIN && !process.env.NO_COLOR && (process.stdout.isTTY || process.argv.includes('--color'));
+const C = (c, s) => COLOR ? `\x1b[${c}m${s}\x1b[0m` : s;
+const version = (F.readJson(path.join(F.FUGU_ROOT, '.claude-plugin', 'plugin.json'), {}) || {}).version || '?';
+
+const COMMANDS = [
+  ['/fugu:hud', 'Check the HUD statusline; install, repair, remove'],
+  ['/fugu:layout', 'List, switch, or make HUD layouts (/fugu:compact, /fugu:detailed are shortcuts)'],
+  ['/fugu:settings', 'Turn features on or off: HUD segments, fleet rows, banner, watch, autoname'],
+  ['/fugu:context', "What's filling this session's context, and how the prompt cache is holding"],
+  ['/fugu:accounts', 'Every Claude Code login here with its 5h/7d usage and reset times'],
+  ['/fugu:sessions', 'Find, name, star, archive, and save Claude and Codex sessions; restore them'],
+  ['/fugu:burn', 'Spend by account, project, agent, work type, and tool; insights; --html to share'],
+  ['/fugu:update', 'Update fugu everywhere it is installed; "check" just compares'],
+  ['/fugu:open', 'Resume or fork a session in a new tmux or Warp pane'],
+  ['/fugu:fleet', 'Explain or tune the subagent fleet rows'],
+  ['/fugu:off, /fugu:on', 'Mute or unmute everything at once'],
+  ['/fugu:help', 'This list'],
+];
+const CUSTOMIZE = [
+  ['fugu-burn --add-rule "abunai is the same as abunaico"', 'add a plain-English rule'],
+  ['fugu-burn --rules', 'see the rules and what they changed'],
+  ['fugu-burn --recompile', 'apply them again'],
+];
+
+const out = [];
+if (COLOR) {
+  const art = process.argv.includes('--puff') ? 'fugu-puff.ans' : 'fugu-flat.ans';
+  try { out.push(fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', art), 'utf8').replace(/\n$/, '')); } catch {}
+}
+out.push(`${C('1;33', 'FUGU')} ${C('2', `v${version}`)}  ${C('3', 'Fu the Bloat. Cool the Burn.')}`);
+out.push(C('2', 'Fleet & Usage Gauge Utility for Claude Code and Codex · github.com/Abunaico/fugu · MIT'));
+out.push('');
+const w = Math.max(...COMMANDS.map(c => c[0].length));
+for (const [cmd, what] of COMMANDS) out.push(`  ${C('36', cmd.padEnd(w))}  ${what}`);
+out.push('');
+out.push(C('1', 'Customize reports'));
+out.push(`  Plain-English rules live in ${F.FILES.reportPrompt.replace(F.HOME, '~')} (ships empty).`);
+out.push('  Haiku turns them into renames, merges, account labels, and hidden projects before a report runs;');
+out.push('  only edits to names that exist are kept, and the result is cached until the rules change.');
+const cw = Math.max(...CUSTOMIZE.map(c => c[0].length));
+for (const [cmd, what] of CUSTOMIZE) out.push(`  ${C('36', cmd.padEnd(cw))}  ${C('2', what)}`);
+out.push('');
+out.push(C('2', 'Everything reads files Claude Code and Codex already write. Model calls happen only in autoname'));
+out.push(C('2', '(fugu-config off autoname), Haiku labels and report rules (opt-in), and fugu-update fetches the release.'));
+console.log(out.join('\n'));

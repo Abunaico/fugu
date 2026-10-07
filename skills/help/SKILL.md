@@ -1,44 +1,17 @@
 ---
 name: help
-description: List fugu's commands and what each one does. Use when the user says "/fugu help", "fugu commands", "what can fugu do", or asks which fugu command to use.
+description: List fugu's commands and what each one does, including how to customize reports. Use when the user says "/fugu help", "fugu commands", "what can fugu do", "how do I customize reports", or asks which fugu command to use.
 ---
 
 # fugu help
 
-Show the banner, then the About line, then the table as-is. Answer any follow-up
-question about a specific command afterward.
+Run the bundled CLI (on PATH while fugu is enabled) and present what it prints:
 
-```
-  🐡  F U G U
-  ─────────────────────────────
-  Fleet & Usage Gauge Utility
+```bash
+fugu-help --plain
 ```
 
-**About:** v0.7.1 · MIT · Anthony Shafer · github.com/Abunaico/fugu
-
-Harness chrome for Claude Code — a statusline HUD, a subagent fleet dashboard, and a
-cross-project session radar. It doesn't wrap, patch, or proxy the `claude` binary:
-everything runs inside the unmodified CLI under your own login, reading files Claude
-Code already writes to disk. No OAuth handling, no credential intermediation, no
-network calls. The name is the *abunai* fish — prepared wrong, it kills — so FUGU
-watches your gauges and puffs up as context fills, same as the fish under threat.
-
-| Command | What it does |
-|---|---|
-| `/fugu:hud` | Check the HUD statusline; `install`, `repair`, `remove` |
-| `/fugu:layout` | List, switch, or make HUD layouts (one YAML file each) |
-| `/fugu:detailed`, `/fugu:compact` | Shortcuts: labeled line per gauge, or one gauge line (default) |
-| `/fugu:settings` | Turn individual features on or off (HUD segments, fleet rows, banner, watch) |
-| `/fugu:context` | What's filling this session's context, and how the prompt cache is holding |
-| `/fugu:accounts` | Every Claude Code login on this machine with its 5h/7d usage and reset times |
-| `/fugu:sessions` | Session radar and manager: find, name, star, archive, assign to a project, save before Claude Code deletes them, restore |
-| `/fugu:burn` | Cost by project and model, a practices check, and before/after comparison; `--html` to share |
-| `/fugu:update` | Update fugu to the latest release in every install scope; `check` to just compare |
-| `/fugu:open` | Resume or fork a session into a new tmux/Warp pane |
-| `/fugu:fleet` | Explain or tune the subagent fleet rows |
-| `/fugu:off`, `/fugu:on` | Mute or unmute everything at once |
-| `/fugu:help` | This list |
-
-CLIs behind them (on PATH while fugu is enabled, usable in any terminal): `fugu-hud`, `fugu-config`, `fugu-context`, `fugu-accounts`, `fugu-sessions`, `fugu-burn`, `fugu-update`.
-
-If a command above reports "Unknown command", fugu was updated during this session: Claude Code reads a plugin's commands at session start, so start a new session (or resume this one) to pick it up.
+- Show the first two lines as a heading, the commands as a two-column table, and the "Customize reports" part as a short section with its three commands. Keep the closing note about what calls a model.
+- Then add one line: run `! fugu-help` (or `! fugu-help --puff`) to see FUGU in full color in the terminal. The chat view can't show terminal colors, so don't paste the colored art here.
+- Answer any follow-up about a specific command afterward.
+- If a command reports "Unknown command", fugu was updated during this session: Claude Code reads a plugin's commands at session start, so start a new session (or resume this one) to pick it up.
