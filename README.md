@@ -33,8 +33,10 @@ your disk. No OAuth token handling, no credential intermediation, no network cal
 | **Accounts** (`bin/fugu-accounts`) | Every Claude Code login on the machine (default config plus profile dirs) with its last-known 5h/7d usage and reset times, side by side. Tells you which account has room without touching a single token. |
 | **Fleet dashboard** (`subagent-statusline.sh`) | Every running subagent as `⚡ finder [opus-5] ▸ running · 42k 21%`. Fits the terminal: model, context %, tokens, and status drop in that order, then the name is clipped with `…`. Applied automatically while the plugin is enabled. |
 | **Session radar** (`bin/fugu-sessions`) | Cross-project index and manager for every Claude Code session on the machine: age, cost, project, resume command. Name, star, archive, or assign a session to a project. Save transcripts before Claude Code's 30-day cleanup deletes them, and restore them later. Incremental byte-range indexing, so only new bytes are ever re-read. |
-| **Burn report** (`bin/fugu-burn`) | Where the tokens went: cost by project and model, a practices check (big models doing execution, mid-work compactions, cache restores after idle, CLAUDE.md load, files re-read), value proxies (commits and PRs per dollar), and a before/after comparison for a habit change. `--html` writes one self-contained file to share. |
+| **Burn report** (`bin/fugu-burn`) | Where the tokens went: ranked insights with a monthly saving, cost by account, project, session name, agent, work type, and model, a practices check (big models doing execution, mid-work compactions, cache restores after idle, CLAUDE.md load, files re-read), value proxies (commits and PRs per dollar, git lines), and a before/after comparison for a habit change. Claude Code and Codex sessions. `--html` writes one self-contained file to share. |
 | **Watch** (`bin/fugu-watch`) | Background monitor. Tells you in-session when *another* session finishes its turn, stops on an error, or goes quiet mid-turn (possible stall). |
+| **Help** (`bin/fugu-help`) | Every command, plus FUGU drawn in truecolor ANSI pixels (`--puff` for the puffed one). |
+| **Update** (`bin/fugu-update`) | Brings every install scope up to the latest release. |
 | **Banner** | SessionStart hook. You'll know it when you see it. |
 
 ### Skills
@@ -51,6 +53,7 @@ your disk. No OAuth token handling, no credential intermediation, no network cal
 | `/fugu:layout` | List, switch, or make HUD layouts |
 | `/fugu:detailed`, `/fugu:compact` | Layout shortcuts |
 | `/fugu:settings` | Turn individual features on or off |
+| `/fugu:update` | Update every install; `check` only compares versions |
 | `/fugu:off`, `/fugu:on` | Mute or unmute everything without uninstalling |
 | `/fugu:help` | List every fugu command; `fugu-help` in a terminal draws FUGU in full color (`--puff` for the puffed one) |
 
@@ -87,6 +90,72 @@ what's wired, which copy is live, and any leftover copies. The fleet dashboard n
 
 **Uninstall:** `/fugu:hud remove` (it only removes a statusLine that is fugu's), then remove the
 plugin. Caches live in `~/.cache/fugu` and `~/.fugu`.
+
+## Building FUGU with FUGU
+
+FUGU was built in Claude Code sessions with FUGU running, so its own build makes a good tour.
+
+**Watch the gauges while you work.** The default `compact` layout packs everything into three
+lines. Partway through one build session it read:
+
+```
+🐡 Opus 5.5 · 👤 you@example.com (enterprise)
+███░░░░░░░ 36% 5h 38% ⏰1h30m →54% 7d 41% ⏰3d0h →71% · $55.60 /compact before a break
+📁 ~/fugu
+```
+
+`/fugu:detailed` spells the same gauges out in words, one per line; `/fugu:compact` switches back:
+
+```
+🐡 Opus 5.5 · 👤 you@example.com (enterprise)
+context      ███░░░░░░░ 36% full · 368k of 1.0M tokens
+5-hour limit 38% used · resets in 1h30m (11:35 AM) · on pace for 54% by reset
+weekly limit 41% used · resets in 3d0h (Sat 10:05 AM) · on pace for 71% by reset
+prompt cache · /compact before a break
+cost         $55.60 this session
+📁 ~/fugu
+```
+
+The nudge on the cost line appears once the context passes 150k tokens: compact before you walk
+away, not mid-work.
+
+**Run a report on the project.** `fugu-burn --project fugu --git` priced that session:
+
+```
+🐡 fugu burn: 2026-09-01 → 2026-10-07 · fugu · 1 sessions · $55.60 ≈ API list price
+
+INSIGHTS                                                    saving / month
+  1. Keep sessions shorter                                  ≈$646
+     The average request re-reads 368k tokens of context; cache reads are 65% of spend.
+  2. Run execution on Sonnet                                ≈$240
+     $44.95 of your own edit and shell turns ran on Opus or Fable; the same tokens on Sonnet 5 cost $36.95.
+
+BY PROJECT                             spend  share  sessions  opus-exec  restores  commits   +lines  $/commit
+  Abunaico/fugu                         $55.60   100%         1        91%     $0.00       36      11k     $1.54
+
+BY WORK TYPE                                        spend  share  requests
+  Shell commands                                     $44.05    79%       385
+  Conversation (no tools)                             $5.03     9%        52
+  Editing code                                        $2.72     5%        19
+```
+
+The lesson was plain: one long Opus session carried 368k tokens into every request, and most of
+the spend was shell work (tests, screenshots) that Sonnet could run. Splitting the work into
+shorter sessions and running execution on Sonnet are the two biggest levers it found.
+
+**Fix the names with a plain-English rule.** Some of the build's folders were called `abunai` and
+others `abunaico`. One rule merges them in every report from then on:
+
+```bash
+fugu-burn --add-rule "abunai is the same as abunaico. just represent as abunaico."
+```
+
+The report header then says `customized: 3 edits from ~/.fugu/report-prompt.md`, and the HTML
+report shows the rule and its edits in a Report rules box at the top.
+
+**Share it.** `fugu-burn --account infernored --since-change 2026-09-24 --html ~/reports/` writes
+`fugu-burn-infernored-2026-09-10_2026-10-07.html`: one account's before and after, ready to send.
+Without `--account` the file is named `all-accounts`.
 
 ## Context + cache viewer
 
@@ -155,7 +224,7 @@ What's measured and what's estimated:
     - context:      [context-bar, context-full, ·, context-tokens, ·, context-warning]
     - 5-hour limit: [5h-used, ·, 5h-resets, 5h-clock, ·, 5h-pace-words]
     - weekly limit: [7d-used, ·, 7d-resets, 7d-clock, ·, 7d-pace-words]
-    - prompt cache: [cache-words, cache-why]
+    - prompt cache: [cache-words, cache-why, ·, nudge]
     - cost:         [cost-words]
     - [dir, ·, git]
   ```
@@ -189,6 +258,7 @@ fugu-burn --days 7 --project swingr
 fugu-burn --account infernored          # one login's sessions
 fugu-burn --since-change 2026-10-01   # before vs after a habit change
 fugu-burn --html report.html          # one self-contained file to share
+fugu-burn --html ~/reports/           # a folder: fugu-burn-<account or all-accounts>[-<project>]-<from>_<to>.html
 fugu-burn --git                       # add commits and lines changed per repo (--full, and --html, include it)
 ```
 
@@ -209,13 +279,18 @@ PRACTICES
 - **Git** (with `--git`, `--full`, or `--html`): commits and lines changed per project in repos
   your sessions worked in (found from where they edited files), with dollars per commit and per
   1,000 lines. Each repo is queried with a 4 second timeout.
-- **The HTML report** is one file with no network: every table sorts by column; hovering a
-  project, account, tag, agent, work type, model, or session shows a card with its spend, model
-  mix, work mix, agents, and top sessions; clicking opens a drawer with every session behind it.
-  `--since-change` adds Before and After tabs, each a full report.
+- **The HTML report** is one file with no network: every table sorts by column, and tables over 12
+  rows get a filter box; hovering a project, account, tag, agent, work type, model, or session
+  shows a card with its spend, model mix, work mix, agents, and top sessions; clicking opens a
+  drawer with every session behind it. `--since-change` adds Before and After tabs, each a full
+  report. Report rules, if you have any, sit in a box at the top. A pixel FUGU swims along the
+  bottom as you scroll: he turns to face the way he swims, rocks with each tail beat, trails
+  bubbles when he's going fast, and blinks and pulls faces now and then. Click him to go back to
+  the top: he gasps, pops up puffed, floats belly-up paddling in a trickle of bubbles, deflates
+  with a spin, and bolts as the page scrolls. The whole
+  fish is about 5 KB of PNG, and he sits still if your system asks for reduced motion.
 - **What fugu costs** closes every report: the report itself is $0 (no model calls), the skill
-  listings fugu adds to each request, Haiku labels if you opted in, and the sessions spent
-  building fugu.
+  listings fugu adds to each request, and Haiku labels if you opted in.
 - **Costs** are estimates at Anthropic API list prices, from the usage each response records
   (streamed lines deduplicated, subagents included). On a subscription they show relative weight,
   not your bill.
@@ -265,6 +340,8 @@ accounts only when a rule mentions them; never transcripts) and gets back a fixe
 project renames, tag renames, account labels, hidden projects. fugu keeps only edits to names that
 exist, applies them in code, and caches them until the rules change, so ordinary runs make no
 Haiku call. Your own `~/.fugu/projects.json` always wins. Needs `fugu-config set model.haiku on`.
+Reports say `customized: N edits from ~/.fugu/report-prompt.md`; the HTML version lists the rules
+(without the file's comment block) and the edits they made.
 
 ## Codex
 
@@ -342,6 +419,7 @@ fugu-config reset                # everything back on
 | `fleet` | subagent fleet rows |
 | `banner` | session start banner |
 | `watch` | cross-session watch notifications |
+| `autoname` | auto-name sessions from their first prompts (Haiku) |
 
 State lives in `~/.fugu/config` as `key=off` lines (anything not listed is on), so you can
 also edit it by hand. `model.haiku` is a choice (`ask`, `on`, `off`, `never`) set with

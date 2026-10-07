@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "FUGU — Fleet & Usage Gauge Utility. HUD statusline, subagent fleet dashboard, and cross-project session radar for Claude Code.",
-    "version": "0.9.0"
+    "version": "0.10.0"
   },
   "plugins": [
     {
       "name": "fugu",
       "source": "./",
       "description": "🐡 FUGU — Fleet & Usage Gauge Utility. HUD statusline, subagent fleet dashboard, cross-project session radar for the Warp/Claude Code stack. Inflates as your context fills. Abunai.",
-      "version": "0.9.0",
+      "version": "0.10.0",
       "author": {
         "name": "Anthony Shafer"
       },
