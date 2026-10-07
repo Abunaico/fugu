@@ -651,7 +651,7 @@ rm -rf "$TC"
 
 echo "— update —"
 TU=$(mktemp -d); mkdir -p "$TU/.claude/plugins" "$TU/proj"
-git init -q --bare "$TU/origin.git"; git clone -q "$TU/origin.git" "$TU/mp" 2>/dev/null
+git init -q --bare "$TU/origin.git"; git -C "$TU/origin.git" symbolic-ref HEAD refs/heads/main; git clone -q "$TU/origin.git" "$TU/mp" 2>/dev/null
 mkdir -p "$TU/mp/.claude-plugin"; printf '{"version":"1.0.0"}' > "$TU/mp/.claude-plugin/plugin.json"
 git -C "$TU/mp" add -A; git -C "$TU/mp" -c user.email=t@t -c user.name=t commit -qm one; git -C "$TU/mp" push -q origin HEAD:main 2>/dev/null; git -C "$TU/mp" branch -q -M main
 git clone -q "$TU/origin.git" "$TU/up" 2>/dev/null; printf '{"version":"1.1.0"}' > "$TU/up/.claude-plugin/plugin.json"
