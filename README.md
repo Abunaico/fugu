@@ -4,7 +4,7 @@
 
 # FUGU: Fleet & Usage Gauge Utility
 
-<img src="assets/fugu-pixel.svg" alt="" width="48" align="right">
+<img src="assets/fugu-flat.png" alt="" width="78" align="right">
 
 **Harness chrome for Claude Code.**
 Simple as Grokbot. Powerful as Hermes. Meme as OpenClaw. The *abunai* fish:
