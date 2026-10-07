@@ -9,7 +9,11 @@ const path = require('path');
 const F = require('../lib/fugu.js');
 
 const PLAIN = process.argv.includes('--plain');
-const COLOR = !PLAIN && !process.env.NO_COLOR && (process.stdout.isTTY || process.argv.includes('--color'));
+// Claude Code runs commands (including ! ones) with stdout captured, not a TTY, while
+// advertising truecolor through COLORTERM; trust that there. FORCE_COLOR is the usual override.
+const TRUECOLOR = /^(truecolor|24bit)$/i.test(process.env.COLORTERM || '');
+const COLOR = !PLAIN && !process.env.NO_COLOR && (process.stdout.isTTY || process.argv.includes('--color')
+  || !!process.env.FORCE_COLOR || (process.env.CLAUDECODE === '1' && TRUECOLOR));
 const C = (c, s) => COLOR ? `\x1b[${c}m${s}\x1b[0m` : s;
 const version = (F.readJson(path.join(F.FUGU_ROOT, '.claude-plugin', 'plugin.json'), {}) || {}).version || '?';
 

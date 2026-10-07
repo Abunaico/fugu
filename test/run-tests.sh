@@ -701,6 +701,8 @@ echo "$hp" | grep -q 'fugu-burn --add-rule' && ok "help explains report customiz
 chk "color help draws the fish" "$(node bin/fugu-help --color | grep -c '▀')" "9"
 chk "--puff draws the puffed fish" "$(node bin/fugu-help --color --puff | grep -c '▀')" "12"
 chk "NO_COLOR skips the art" "$(NO_COLOR=1 node bin/fugu-help --color | grep -c '▀')" "0"
+chk "Claude Code ! commands get the fish" "$(CLAUDECODE=1 COLORTERM=truecolor node bin/fugu-help | grep -c '▀')" "9"
+chk "piped output elsewhere stays plain" "$(env -u CLAUDECODE -u FORCE_COLOR COLORTERM= node bin/fugu-help | grep -c '▀')" "0"
 
 echo "— projects: nesting —"
 TN=$(mktemp -d); NP="$TN/.claude/projects/-n"; mkdir -p "$NP" "$TN/work/app/.git" "$TN/work/docs"
