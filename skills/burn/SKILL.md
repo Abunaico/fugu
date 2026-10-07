@@ -20,6 +20,7 @@ fugu-burn --json
 
 Arguments the user passed: "$ARGUMENTS"
 
+- A standing preference about how reports read ("treat X as Y", "X is the same as Y", "hide X", "call the gmail account Personal") → save it first with `fugu-burn --add-rule "<their words>"`, then run the report. `fugu-burn --rules` shows what's active. If the report says customizations need Haiku, run the Haiku check from `/fugu:sessions` (fugu-config haiku-check) and ask.
 - An account, email, company, or "personal"/"work" → `--account <substr>` (match against the BY ACCOUNT labels).
 - A number → `--days N`. A word that looks like a project → `--project <substr>`. A date or "since I changed X on <date>" → `--since-change YYYY-MM-DD`. "share", "html", "file" → `--html` (tell them the path it printed).
 - Present the output as-is. Then add at most three sentences: the top INSIGHTS lever (largest monthly saving) and the one action to take first.

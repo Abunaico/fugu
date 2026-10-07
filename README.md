@@ -250,6 +250,22 @@ PRACTICES
   under that name. Fold names together with `fugu-sessions merge` (case-insensitive aliases, full
   nested names too), or move one session with `fugu-sessions assign`.
 
+## Customizing reports
+
+`~/.fugu/report-prompt.md` holds plain-English rules for reports. It ships empty.
+
+```bash
+fugu-burn --add-rule "abunai is the same as abunaico; show it as Abunaico"
+fugu-burn --rules        # the rules, and the edits they compiled to
+fugu-burn --recompile    # compile again without changing the rules
+```
+
+The next report sends Haiku the rules and the names it may change (projects and tags, plus
+accounts only when a rule mentions them; never transcripts) and gets back a fixed set of edits:
+project renames, tag renames, account labels, hidden projects. fugu keeps only edits to names that
+exist, applies them in code, and caches them until the rules change, so ordinary runs make no
+Haiku call. Your own `~/.fugu/projects.json` always wins. Needs `fugu-config set model.haiku on`.
+
 ## Codex
 
 fugu reads OpenAI Codex sessions too (`$CODEX_HOME/sessions`, default `~/.codex`), the same way

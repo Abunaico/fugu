@@ -5,6 +5,7 @@
 // Usage: fugu-burn [--days N | --since YYYY-MM-DD [--until YYYY-MM-DD]]
 //                  [--project <substr>] [--account <substr>] [--since-change YYYY-MM-DD]
 //                  [--git | --full] [--json] [--html [file]] [--reindex]
+//        fugu-burn --add-rule "<plain-English customization>" | --rules | --recompile
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -26,17 +27,52 @@ if (!isDay(until) || (since && !isDay(since))) die('dates are YYYY-MM-DD');
 if (!since) { const n = parseInt(flag('--days', '30'), 10); since = shift(until, -((Number.isFinite(n) && n > 0 ? n : 30) - 1)); }
 const PROJ = flag('--project', null);
 
+if (has('--add-rule')) {
+  const line = flag('--add-rule', '');
+  if (!line.trim()) die('usage: fugu-burn --add-rule "<plain-English customization>"');
+  F.addReportRule(line);
+  console.log(`🐡 added to ${F.FILES.reportPrompt}: ${F.clean(line).trim()}`);
+}
+
 let all;
 try { all = F.scan({ reindex: has('--reindex') }); } catch (e) { die(e.message); }
-const meta = F.loadMeta(), pmap = F.loadProjects();
-const nameProject = F.projectNamer(all.map(s => F.clean(s.state.cwd)), pmap);
+const meta = F.loadMeta();
+const cwds = all.map(s => F.clean(s.state.cwd));
+const tagOf = s => {
+  const renamed = F.clean((meta[s.id] || {}).name || s.state.customTitle);
+  return renamed ? ((/^([A-Za-z][A-Za-z0-9]*)[-_:\s]/.exec(renamed) || [])[1] || renamed).toUpperCase().slice(0, 16) : '(not renamed)';
+};
+// Report customizations: compile the plain-English rules against today's names
+// (as they look without customization), then build the namer with them applied.
+const ACC = F.accounts();
+const baseAcct = org => org === 'codex' ? 'Codex (ChatGPT login)' : F.accountLabel(ACC.byOrg[org] || (org ? { email: `org ${org.slice(0, 8)}`, plan: '?', orgName: '' } : null));
+const custom = (() => {
+  const base = F.projectNamer(cwds, F.loadProjects(false));
+  const uniq = a => [...new Set(a)].sort();
+  const names = {
+    projects: uniq(all.map(s => base(F.clean(s.state.cwd), (meta[s.id] || {}).project))),
+    tags: uniq(all.map(tagOf)),
+    accounts: uniq([...Object.keys(ACC.byOrg).map(baseAcct), baseAcct('codex'), baseAcct('')]),
+  };
+  return F.compileReportRules(names, { force: has('--recompile') });
+})();
+const RULES = custom.rules || {};
+const hidden = new Set((RULES.hide_projects || []).map(n => n.toLowerCase()));
+const pmap = F.loadProjects();
+const nameProject = F.projectNamer(cwds, pmap);
 const projOf = s => nameProject(F.clean(s.state.cwd), (meta[s.id] || {}).project);
+if (has('--rules')) {
+  console.log(`🐡 report customizations: ${F.FILES.reportPrompt}\n`);
+  console.log(F.reportPromptText() || '  (empty: add one with fugu-burn --add-rule "...")');
+  console.log(`\n  status: ${custom.status}${custom.usd ? ` · Haiku $${custom.usd.toFixed(4)}` : ''}`);
+  console.log(JSON.stringify(RULES, null, 2).split('\n').map(l => `  ${l}`).join('\n'));
+  process.exit(0);
+}
 // Account per request comes from Claude Code's credential_org record. Subagents and
 // older transcripts without it fall back to the parent's account, then to a profile's
 // last-session record, else unknown.
-const ACC = F.accounts();
 const orgFor = (org, s) => org || s.state.org || ACC.bySession[s.id] || '';
-const acctName = org => org === 'codex' ? 'Codex (ChatGPT login)' : F.accountLabel(ACC.byOrg[org] || (org ? { email: `org ${org.slice(0, 8)}`, plan: '?', orgName: '' } : null));
+const acctName = org => { const n = baseAcct(org); return (RULES.account_labels || {})[n] || n; };
 const mainAcct = new Map();
 function sessionAccount(s) {
   if (mainAcct.has(s.id)) return mainAcct.get(s.id);
@@ -48,7 +84,7 @@ function sessionAccount(s) {
   return name;
 }
 const ACCT = flag('--account', null);
-const sessions = all.filter(s => (!PROJ || projOf(s).toLowerCase().includes(PROJ.toLowerCase()))
+const sessions = all.filter(s => !hidden.has(projOf(s).toLowerCase()) && (!PROJ || projOf(s).toLowerCase().includes(PROJ.toLowerCase()))
   && (!ACCT || ACCT.toLowerCase().split(/\s+/).filter(Boolean).every(w => sessionAccount(s).toLowerCase().includes(w))));
 const fam = m => (/fable|mythos/.test(m) ? 'fable' : /opus/.test(m) ? 'opus' : /sonnet/.test(m) ? 'sonnet' : /haiku/.test(m) ? 'haiku' : 'other');
 
@@ -142,7 +178,7 @@ function aggregate(from, to) {
     } });
     // /rename titles are the user's own labels; their leading token (IRT-, ACO-) is a workstream tag.
     const mm = meta[s.id] || {}, renamed = F.clean(mm.name || s.state.customTitle);
-    const tag = renamed ? ((/^([A-Za-z][A-Za-z0-9]*)[-_:\s]/.exec(renamed) || [])[1] || renamed).toUpperCase().slice(0, 16) : '(not renamed)';
+    const tag0 = tagOf(s), tag = (RULES.tag_aliases || {})[tag0] || tag0;
     A.list.push({ id: s.id, title: renamed || F.clean(s.title || mm.label || s.state.aiTitle || s.state.summary).slice(0, 60), renamed: !!renamed, tag,
       project: name, account: sessionAccount(s), harness: s.harness, usd: sUsd, reqs: sReqs, days: sDays.size, md: sMd, wk: sWk, ag: sAg,
       first: [...sDays].sort()[0], last: [...sDays].sort().pop() });
@@ -249,6 +285,11 @@ function rates(A) {
   ];
 }
 
+const nRules = Object.values(RULES).reduce((a, v) => a + (Array.isArray(v) ? v.length : Object.keys(v).length), 0);
+const CUSTOM_NOTE = custom.status === 'empty' ? ''
+  : custom.status === 'haiku-off' ? `customizations in ${F.FILES.reportPrompt} need Haiku: fugu-config set model.haiku on`
+  : custom.status === 'failed' ? `couldn't compile ${F.FILES.reportPrompt}; using the last good version (${nRules} edits)`
+  : `customized: ${nRules} edit${nRules === 1 ? '' : 's'} from ${F.FILES.reportPrompt}${custom.status === 'compiled' ? ` (compiled now by Haiku${custom.usd ? `, $${custom.usd.toFixed(4)}` : ''})` : ''}`;
 const k = n => n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n));
 const usd = v => v == null ? '–' : v >= 1000 ? `$${Math.round(v).toLocaleString('en-US')}` : v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`;
 const pct = x => `${Math.round(x * 100)}%`;
@@ -368,6 +409,7 @@ function text(R) {
     period(R.after);
   } else {
     o.push(`🐡 fugu burn: ${R.A.from} → ${R.A.to}${filt} · ${R.A.sessions} sessions · ${bold(usd(R.A.usd))} ${dim('≈ API list price')}`);
+    if (CUSTOM_NOTE) o.push(dim(`   ${CUSTOM_NOTE}`));
     o.push('');
     period(R);
   }
@@ -559,7 +601,7 @@ ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = cha
 <section class="panel" id="after">${period(R.after)}</section><section class="panel" id="before" hidden>${period(R.before)}</section>`;
   } else {
     title = `${R.A.from} → ${R.A.to}`;
-    body = (filt ? `<p class="sub">Filtered: ${e(filt)}</p>` : '') + period(R);
+    body = (filt ? `<p class="sub">Filtered: ${e(filt)}</p>` : '') + (CUSTOM_NOTE ? `<p class="note">${e(CUSTOM_NOTE)}</p>` : '') + period(R);
   }
   let css = '';
   try { css = fs.readFileSync(path.join(F.FUGU_ROOT, 'lib', 'report.css'), 'utf8'); } catch {}
