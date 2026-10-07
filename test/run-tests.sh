@@ -558,6 +558,8 @@ grep -c 'src="data:image/png;base64,' "$TB/r.html" | grep -q '^1$' && grep -q 'c
 grep -q 'rel="icon" href="data:image/png;base64,' "$TB/r.html" && ok "fish favicon embedded" || bad "fish favicon embedded"
 grep -q 'FUGU <span class="the">the</span> BURN <em>\[' "$TB/r.html" && ok "heading reads FUGU the BURN [range]" || bad "heading reads FUGU the BURN [range]"
 grep -qE '(src|href)="(https?:)?//' "$TB/r.html" && bad "report has no external URLs" || ok "report has no external URLs"
+grep -q '<td class="n" data-v="[^"]*">Hermes' "$TB/r2.html" && bad "text cells are not numeric" || ok "text cells are not numeric"
+HOME=$TB node bin/fugu-burn --html "$TB/r3.html" >/dev/null; grep -q '<th tabindex="0">Project</th>' "$TB/r3.html" && ok "text column headers left-aligned" || bad "text column headers left-aligned"
 burn --since-change "$D" | grep -q 'Spend per day' && ok "before/after renders" || bad "before/after renders"
 burn --since-change "$D" | grep -q 'BY AGENT' && ok "before/after carries the full report" || bad "before/after carries the full report"
 burn --since-change "$D" --html "$TB/c.html" >/dev/null; grep -c 'class="panel"' "$TB/c.html" | grep -q 2 && ok "compare html has before and after panels" || bad "compare html has before and after panels"

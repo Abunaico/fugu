@@ -469,14 +469,19 @@ function text(R) {
 
 function html(R) {
   const e = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-  // A cell is text, or [text, sortValue]; numeric columns sort by the raw value, blanks last.
-  const td = (c, i) => {
-    const [t, v] = Array.isArray(c) ? c : [c, null];
-    return `<td${i ? ' class="n"' : ''}${v != null && Number.isFinite(v) ? ` data-v="${v}"` : i ? ' data-v="-1e99"' : ''}>${t}</td>`;
-  };
+  // A cell is text (left-aligned, wraps, sorts A to Z) or [text, sortValue] (a number:
+  // right-aligned, sorts by the raw value, blanks last).
+  const td = c => Array.isArray(c)
+    ? `<td class="n" data-v="${c[1] != null && Number.isFinite(c[1]) ? c[1] : -1e99}">${c[0]}</td>`
+    : `<td>${c}</td>`;
   // f = [type, value] makes the row hoverable and clickable (card + drill-down); a string is a static tip.
   const row = (cells, kid, f) => `<tr${kid ? ' class="kid"' : ''}${Array.isArray(f) ? ` tabindex="0" data-ft="${e(f[0])}" data-fv="${e(f[1])}"` : f ? ` data-tip="${e(f)}"` : ''}>${cells.map(td).join('')}</tr>`;
-  const table = (cols, rows) => `<div class="wrap"><table class="s"><thead><tr>${cols.map((c, i) => `<th tabindex="0"${i ? ' class="n"' : ''}>${e(c)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+  // Header alignment follows the first row's cells; tables past 12 rows get a filter box.
+  const table = (cols, rows) => {
+    const num = (rows[0] || '').split('<td').slice(1).map(c => c.startsWith(' class="n"'));
+    const filter = rows.length > 12 ? `<div class="tfilter"><input type="search" placeholder="Filter ${rows.length} rows" aria-label="Filter this table"><span></span></div>` : '';
+    return `${filter}<div class="wrap"><table class="s"><thead><tr>${cols.map((c, i) => `<th tabindex="0"${num[i] ? ' class="n"' : ''}>${e(c)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+  };
   const $ = v => [e(usd(v)), v == null ? null : v], P = (v, of) => [e(pct(of ? v / of : 0)), of ? v / of : 0], K = v => [e(k(v)), v], N = v => [String(v), v];
   const filt = [PROJ && `project ${PROJ}`, ACCT && `account ${ACCT}`].filter(Boolean).join(', ');
   const round = o => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v >= 0.005).map(([k2, v]) => [k2, +v.toFixed(2)]));
@@ -571,7 +576,7 @@ ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = cha
 <title>FUGU the BURN</title>${icon}<style>
 ${css}</style></head><body>
 <h1>${fish || '🐡 '}FUGU <span class="the">the</span> BURN <em>[${e(title)}]</em></h1>${body}
-<p class="note">Generated ${e(new Date().toISOString().slice(0, 16).replace('T', ' '))} from local Claude Code transcripts. Costs are estimates at Anthropic API list prices. Click a column to sort; indented rows stay with their group.</p>
+<p class="note">Generated ${e(new Date().toISOString().slice(0, 16).replace('T', ' '))} from local Claude Code transcripts. Costs are estimates at Anthropic API list prices. Click a column to sort; type in a filter box to narrow a long table. Indented rows stay with their group.</p>
 <script>
 function sortable(t) {
   const hs = [...t.tHead.rows[0].cells], tb = t.tBodies[0];
@@ -590,6 +595,24 @@ function sortable(t) {
   });
 }
 document.querySelectorAll('table.s').forEach(sortable);
+// Filter: every word must appear in the row. A group (a row and its indented rows)
+// shows when its parent or any child matches; a matching parent keeps all its children.
+function filterable(box, t) {
+  const input = box.querySelector('input'), count = box.querySelector('span'), tb = t.tBodies[0];
+  const groups = () => { const g = []; for (const r of tb.rows) r.classList.contains('kid') && g.length ? g[g.length - 1].push(r) : g.push([r]); return g; };
+  input.oninput = () => {
+    const words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+    const hit = r => words.every(w => r.textContent.toLowerCase().includes(w));
+    let shown = 0, total = 0;
+    for (const [p, ...kids] of groups()) {
+      const ph = hit(p), kh = kids.map(hit), on = ph || kh.some(Boolean);
+      p.hidden = !on; kids.forEach((k, i) => { k.hidden = !(ph || kh[i]); });
+      total++; if (on) shown++;
+    }
+    count.textContent = words.length ? shown + ' of ' + total : '';
+  };
+}
+document.querySelectorAll('.tfilter').forEach(b => filterable(b, b.nextElementSibling.querySelector('table')));
 const WORKL = ${JSON.stringify(WORK).replace(/</g, '\\u003c')};
 const money = v => v >= 1000 ? '$' + Math.round(v).toLocaleString('en-US') : v >= 100 ? '$' + Math.round(v) : '$' + v.toFixed(2);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -659,7 +682,12 @@ function open(row) {
     [[money(s.x), s.x], [s.d, s.d], [s.r, s.r]].forEach(([txt, val]) => { const c = el('td', 'n', String(txt)); c.dataset.v = val; r.append(c); });
   }
   const w = el('div', 'wrap'); w.append(tbl);
-  drawer.replaceChildren(x, h, el('p', 'sub', money(tot) + ' across ' + rows.length + ' sessions. Click a column to sort; Esc closes.'), w);
+  const parts = [x, h, el('p', 'sub', money(tot) + ' across ' + rows.length + ' sessions. Click a column to sort; Esc closes.')];
+  if (rows.length > 12) {
+    const box = el('div', 'tfilter'), input = el('input'); input.type = 'search'; input.placeholder = 'Filter ' + rows.length + ' sessions';
+    input.setAttribute('aria-label', 'Filter sessions'); box.append(input, el('span')); parts.push(box); filterable(box, tbl);
+  }
+  drawer.replaceChildren(...parts, w);
   sortable(tbl); tip.hidden = true; veil.hidden = drawer.hidden = false; x.focus();
 }
 document.addEventListener('click', ev => { const r = ev.target.closest('tr[data-ft]'); if (r && !ev.target.closest('.drawer') && r.dataset.ft !== 'id') open(r); });
