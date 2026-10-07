@@ -97,7 +97,7 @@ function hook() {
 }
 
 function pastTitles(exceptId) {
-  const cache = readJSON(CACHE) || {};
+  const raw = readJSON(CACHE) || {}, cache = raw.files || raw;   // v2+ caches nest entries under files
   const seen = new Map(), recent = new Set(), cutoff = Date.now() - 3 * 864e5;
   for (const [file, ent] of Object.entries(cache)) {
     const s = ent && ent.state; if (!s || !s.customTitle) continue;

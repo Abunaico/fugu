@@ -385,6 +385,14 @@ if feat hud.fish; then fish="🐡"; [ "$pct" -ge 90 ] && fish="🐡☠️"; fi
 wd fish 99 "$fish"
 wd model 99 "$BOLD$CYN$model$RST"
 mode=""; mode_short=""; eff=""; sty=""
+# A big context rewrites at the cache-write price on a return after the cache
+# expires; compacting before a break makes that rewrite small.
+nudge=""; nudge_short=""
+if feat hud.nudge && [ "$used" -ge 150000 ]; then
+  nc="$DIM"; [ -n "$cache_left" ] && [ "$cache_left" -lt 600 ] && nc="$YLW"
+  nudge="${nc}/compact before a break${RST}"; nudge_short="${nc}/compact?${RST}"
+fi
+wd nudge 8 "$nudge" "$nudge_short"
 if feat hud.mode; then
   mode=$effort
   # The default output style is the unremarkable case, so it stays quiet.
@@ -564,3 +572,11 @@ for (( li = 0; li < ${#L_LBL[@]}; li++ )); do layout_line "${L_LBL[li]}" "${L_IT
 [ -n "$layout_note" ] && printf '%s\n' "${YLW}🐡 ${layout_note}${RST}"
 # Claude Code hides the HUD on a non-zero exit, and the test above leaves 1 behind.
 exit 0
+# A big context rewrites at the cache-write price on a return after the cache
+# expires; compacting before a break makes that rewrite small.
+nudge=""; nudge_short=""
+if feat hud.nudge && [ "$used" -ge 150000 ]; then
+  nc="$DIM"; [ -n "$cache_left" ] && [ "$cache_left" -lt 600 ] && nc="$YLW"
+  nudge="${nc}/compact before a break${RST}"; nudge_short="${nc}/compact?${RST}"
+fi
+wd nudge 8 "$nudge" "$nudge_short"

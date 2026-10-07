@@ -1,205 +1,250 @@
 #!/usr/bin/env node
-// fugu session radar v2 — cross-project Claude Code session index.
-// Incremental indexing ported from switchboard's harness contract:
-//   append-only transcripts resume at the last indexed byte, keyed by a
-//   head hash (dev:ino + first 4KB) so replaced files re-index from zero.
-// Cache: ~/.fugu/sessions-cache.json — no sqlite, no deps.
+// fugu session radar: cross-project Claude Code session index and manager.
+// Indexing lives in lib/fugu.js (incremental, byte-range resume). Metadata
+// (name, star, archive, project) lives in ~/.fugu/sessions-meta.json; saved
+// transcripts in ~/.fugu/archive. Nothing here deletes a transcript.
 //
-// Usage: fugu-sessions [--limit N] [--json] [--project <substr>]
-//                      [--active] [--search <text>] [--reindex]
+// Usage: fugu-sessions [--limit N] [--json] [--project <substr>] [--active]
+//                      [--search <text>] [--starred] [--archived] [--reindex]
+//        fugu-sessions name <id> <text...>         ("" clears)
+//        fugu-sessions star|unstar|archive|unarchive <id>...
+//        fugu-sessions assign <id> <project>       ("-" clears)
+//        fugu-sessions merge [<name>... --into <project>]   (no args lists; --into "" unmerges)
+//        fugu-sessions save [<id>...] [--starred] [--expiring] [--all]
+//        fugu-sessions saved | restore <id>
+//        fugu-sessions label [--limit N] [--dry-run]   (Haiku, opt-in)
 'use strict';
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
+const { spawnSync } = require('child_process');
+const F = require('../lib/fugu.js');
 
 const args = process.argv.slice(2);
-const flag = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
+const flag = (n, d) => { const i = args.indexOf(n); return i >= 0 && i + 1 < args.length ? args[i + 1] : d; };
+const has = n => args.includes(n);
 const LIMIT = (() => { const n = parseInt(flag('--limit', '15'), 10); return Number.isFinite(n) && n > 0 ? n : 15; })();
-const AS_JSON = args.includes('--json');
-const ONLY_ACTIVE = args.includes('--active');
-const REINDEX = args.includes('--reindex');
-const PROJ_FILTER = flag('--project', null);
-const SEARCH = flag('--search', null);
+const AS_JSON = has('--json');
+const VALUED = new Set(['--limit', '--project', '--search', '--into']);
+const pos = args.filter((a, i) => !a.startsWith('--') && !VALUED.has(args[i - 1]));
+const CMDS = new Set(['merge', 'name', 'star', 'unstar', 'archive', 'unarchive', 'assign', 'save', 'saved', 'restore', 'label']);
+const cmd = CMDS.has(pos[0]) ? pos[0] : null;
+const die = (m, code = 1) => { console.error(`fugu-sessions: ${m}`); process.exit(code); };
 
-const ROOT = path.join(os.homedir(), '.claude', 'projects');
-const CACHE_DIR = path.join(os.homedir(), '.fugu');
-const CACHE_FILE = path.join(CACHE_DIR, 'sessions-cache.json');
-const HEAD_BYTES = 4096;
-const SNIPPET_CAP = 100;
-
-let cache = {};
-if (!REINDEX) {
-  try { cache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')); } catch {}
-}
-
-function headHash(fd, stat) {
-  const n = Math.min(HEAD_BYTES, stat.size);
-  if (n === 0) return '';
-  const buf = Buffer.alloc(n);
-  fs.readSync(fd, buf, 0, n, 0);
-  return crypto.createHash('sha1')
-    .update(`${stat.dev}:${stat.ino}:`).update(buf).digest('hex');
-}
-
-// --- per-line accumulator (ported from switchboard applyLine) ---
-function emptyState() {
-  return { summary: '', count: 0, slug: null, customTitle: null, aiTitle: null, last: null, cwd: null };
-}
-
-function applyLine(line, st) {
-  let e;
-  try { e = JSON.parse(line); } catch { return; }
-  if (e.timestamp) st.last = e.timestamp;
-  if (!st.cwd && typeof e.cwd === 'string') st.cwd = e.cwd;
-  if (typeof e.slug === 'string' && !st.slug) st.slug = e.slug;
-  if (e.type === 'custom-title' && typeof e.customTitle === 'string') st.customTitle = e.customTitle;
-  if (e.type === 'ai-title' && typeof e.aiTitle === 'string') st.aiTitle = e.aiTitle;
-  if (e.type === 'user' || e.type === 'assistant') st.count++;
-
-  if (!st.summary && e.type === 'user' && e.message) {
-    const c = e.message.content;
-    let t = typeof c === 'string' ? c
-      : Array.isArray(c) ? (c.find(p => p.type === 'text') || {}).text || '' : '';
-    // Slash commands and ! shell input are wrapped in tags; the summary should be
-    // the first thing the user actually typed, so wait for a plain prompt.
-    if (t && !/<bash-input>|<local-command-caveat>|<command-name>/.test(t.slice(0, 4096))) {
-      t = t.slice(0, 4096);
-      t = t.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-      if (t) st.summary = t.slice(0, SNIPPET_CAP);
-    }
-  }
-}
-
-/** Incremental read: resume at cached.indexedBytes when the head still matches. */
-function indexFile(fp, st8, prev) {
-  let fd;
-  try { fd = fs.openSync(fp, 'r'); } catch { return null; }
-  try {
-    const hh = headHash(fd, st8);
-    const resume = prev && prev.headHash === hh
-      && Number.isSafeInteger(prev.indexedBytes)
-      && prev.indexedBytes > 0 && prev.indexedBytes <= st8.size;
-    const st = resume ? { ...emptyState(), ...prev.state } : emptyState();
-    let pos = resume ? prev.indexedBytes : 0;
-
-    const CHUNK = 1 << 20;
-    const buf = Buffer.alloc(CHUNK);
-    let carry = Buffer.alloc(0); // raw bytes after the last newline — never decoded early
-    let consumed = pos;
-    while (pos < st8.size) {
-      const n = fs.readSync(fd, buf, 0, Math.min(CHUNK, st8.size - pos), pos);
-      if (n <= 0) break;
-      const chunk = Buffer.concat([carry, buf.subarray(0, n)]);
-      let start = 0;
-      for (let i = chunk.indexOf(0x0a); i !== -1; i = chunk.indexOf(0x0a, start)) {
-        if (i > start) applyLine(chunk.toString('utf8', start, i), st);
-        start = i + 1;
-      }
-      carry = Buffer.from(chunk.subarray(start));
-      pos += n;
-      consumed = pos - carry.length; // raw byte arithmetic — immune to UTF-8 split
-    }
-    // The trailing no-newline line is shown but NOT persisted: indexedBytes
-    // excludes it, so caching it in st would double-apply it on the next resume.
-    let disp = st;
-    if (carry.length) { disp = { ...st }; applyLine(carry.toString('utf8'), disp); }
-
-    return { headHash: hh, indexedBytes: consumed, state: st, dispState: disp };
-  } catch { return null; }
-  finally { try { fs.closeSync(fd); } catch {} }
-}
-
-const sessions = [];
-let dirs = [];
-try { dirs = fs.readdirSync(ROOT); } catch { console.error(`no ${ROOT}`); process.exit(1); }
-
+const tty = process.stdout.isTTY && !process.env.NO_COLOR;
+const C = (c, s) => tty ? `\x1b[${c}m${s}\x1b[0m` : s;
 const now = Date.now();
-for (const d of dirs) {
-  // Lossy fallback only — '_' and '-' both encode to '-'. Authoritative path
-  // comes from the transcript's own cwd field once the file is indexed.
-  const decoded = d.replace(/^-/, '/').replace(/-/g, '/');
-  if (PROJ_FILTER && !decoded.toLowerCase().replace(/\//g, '-').includes(PROJ_FILTER.toLowerCase().replace(/[/_]/g, '-'))) continue;
-  const dir = path.join(ROOT, d);
-  let files;
-  try { files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')); } catch { continue; }
-  for (const f of files) {
-    const fp = path.join(dir, f);
-    let st8;
-    try { st8 = fs.statSync(fp); } catch { continue; }
-    if (st8.size < 200) { delete cache[fp]; continue; }
-
-    const key = fp;
-    const prev = cache[key];
-    let rec;
-    if (prev && prev.mtimeMs === st8.mtimeMs && prev.size === st8.size) {
-      // Untouched since last scan — free. Serve the DISPLAY state (which may
-      // include a complete-but-unterminated tail line) so counts never flicker
-      // between an indexing run and a fast-path run.
-      rec = { ...prev, state: prev.disp || prev.state };
-    } else {
-      const idx = indexFile(fp, st8, prev);
-      if (!idx) continue;
-      const { dispState, ...cacheable } = idx;
-      rec = { mtimeMs: st8.mtimeMs, size: st8.size, ...cacheable, state: dispState };
-      // Persist BOTH: `state` resumes indexing (tail excluded, matches
-      // indexedBytes); `disp` is what the fast path shows (tail included).
-      cache[key] = { mtimeMs: st8.mtimeMs, size: st8.size, ...cacheable, disp: dispState };
-    }
-
-    const s = rec.state;
-    if (!s || !s.count) continue;
-    const ageMs = now - st8.mtimeMs;
-    const status = ageMs < 60e3 ? 'active' : ageMs < 3600e3 ? 'recent' : 'idle';
-    if (ONLY_ACTIVE && status === 'idle') continue;
-
-    const clean = v => String(v || '').replace(/[\x00-\x1f\x7f\u0080-\u009f]/g, '');
-    const title = clean(s.customTitle || s.aiTitle || s.slug || s.summary);
-    if (SEARCH && !(title + ' ' + s.summary).toLowerCase().includes(SEARCH.toLowerCase())) continue;
-
-    sessions.push({
-      id: f.replace('.jsonl', ''), project: clean(s.cwd) || decoded, file: fp,
-      mtime: st8.mtimeMs, size: st8.size, status,
-      title, summary: clean(s.summary), messages: s.count, lastTs: s.last,
-    });
-  }
-}
-
-for (const k of Object.keys(cache)) {
-  if (!fs.existsSync(k)) delete cache[k];
-}
-try {
-  // Private: the cache holds titles and first prompts from 0600 transcripts.
-  fs.mkdirSync(CACHE_DIR, { recursive: true, mode: 0o700 });
-  try { fs.chmodSync(CACHE_DIR, 0o700); } catch {}
-  const tmp = CACHE_FILE + '.tmp.' + process.pid;
-  fs.writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600, flag: 'wx' });
-  fs.renameSync(tmp, CACHE_FILE);
-} catch {}
-
-sessions.sort((a, b) => b.mtime - a.mtime);
-const top = sessions.slice(0, LIMIT);
-// Claude Code sets CLAUDE_CODE_SESSION_ID; CLAUDE_SESSION_ID is the older name.
-const SELF = process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || '';
-
-if (AS_JSON) {
-  console.log(JSON.stringify(top, null, 2));
-  process.exit(0);
-}
-
 const ago = ms => {
   const m = Math.round((now - ms) / 60000);
-  if (m < 60) return `${m}m`;
-  if (m < 1440) return `${Math.round(m / 60)}h`;
-  return `${Math.round(m / 1440)}d`;
+  return m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
 };
-const DOT = { active: '\x1b[32m●\x1b[0m', recent: '\x1b[33m○\x1b[0m', idle: '\x1b[2m·\x1b[0m' };
 
-console.log(`🐡 fugu radar — ${sessions.length} sessions${ONLY_ACTIVE ? ' (active/recent)' : ''}, newest ${top.length}:\n`);
-for (const s of top) {
-  const proj = s.project;
-  const me = s.id === SELF ? ' \x1b[36m◀ you\x1b[0m' : '';
-  console.log(`  ${DOT[s.status]} ${ago(s.mtime).padStart(4)}  ${proj}  ${String(s.messages).padStart(4)}msg  ${s.title.slice(0, 60)}${me}`);
-  console.log(`         \x1b[2mclaude --resume ${s.id}\x1b[0m`);
+let all;
+try { all = F.scan({ reindex: has('--reindex'), projFilter: cmd ? null : flag('--project', null) }); } catch (e) { die(e.message); }
+const meta = F.loadMeta();
+const pmap = F.loadProjects();
+const cwds = all.map(s => F.clean(s.state.cwd));
+const nameProject = F.projectNamer(cwds, pmap);
+
+// Commands return instead of exiting: process.exit can cut off piped stdout.
+(function main() {
+
+function resolve(ref) {
+  const r = String(ref || '').toLowerCase();
+  if (r.length < 6) die(`session id "${F.clean(ref)}" is too short (6+ characters)`, 2);
+  const hits = all.filter(s => s.id.toLowerCase().startsWith(r));
+  if (hits.length !== 1) die(hits.length ? `"${F.clean(ref)}" matches ${hits.length} sessions` : `no session ${F.clean(ref)}`, 2);
+  return hits[0];
 }
-console.log(`\n  \x1b[2m● <1m  ○ <1h  · idle   fork: claude --resume <id> --fork-session\x1b[0m`);
+const m = id => meta[id] || (meta[id] = {});
+const tidy = id => { for (const [k, v] of Object.entries(meta[id] || {})) if (v === '' || v === false || v == null) delete meta[id][k]; if (meta[id] && !Object.keys(meta[id]).length) delete meta[id]; };
+
+// --- merge: fold project names (renamed folders, case variants) into one ---
+if (cmd === 'merge') {
+  const cfg = F.readJson(F.FILES.projects, {}) || {};
+  cfg.aliases = cfg.aliases || {};
+  const names = pos.slice(1), into = flag('--into', null);
+  if (names.length && into == null) die('usage: fugu-sessions merge <name>... --into <project>', 2);
+  for (const n of names) {
+    for (const key of Object.keys(cfg.aliases)) if (key.toLowerCase() === n.toLowerCase()) delete cfg.aliases[key];
+    if (into) cfg.aliases[F.clean(n)] = F.clean(into);
+  }
+  if (names.length) F.writePrivate(F.FILES.projects, JSON.stringify(cfg, null, 2) + '\n');
+  const counts = {};
+  const fresh = F.projectNamer(cwds, F.loadProjects());
+  for (const s of all) if (s.state.count) { const n = fresh(F.clean(s.state.cwd), (meta[s.id] || {}).project); counts[n] = (counts[n] || 0) + 1; }
+  const groups = {};
+  for (const [from, to] of Object.entries(cfg.aliases)) (groups[to] = groups[to] || []).push(from);
+  if (!Object.keys(groups).length) console.log('No merged projects. fugu-sessions merge <name>... --into <project>');
+  for (const [to, froms] of Object.entries(groups)) console.log(`  ${to} ← ${froms.join(', ')}  ${C('2', `${counts[to] || 0} sessions`)}`);
+  console.log(C('2', `  saved in ${F.FILES.projects}. Names match case-insensitively.`));
+  return;
+}
+
+// --- metadata commands ---
+if (cmd === 'name' || cmd === 'assign') {
+  const s = resolve(pos[1]);
+  const val = F.clean(pos.slice(2).join(' ')).trim().slice(0, 80);
+  m(s.id)[cmd === 'name' ? 'name' : 'project'] = cmd === 'assign' && val === '-' ? '' : val;
+  tidy(s.id); F.saveMeta(meta);
+  console.log(`${s.id.slice(0, 8)} ${cmd === 'name' ? 'name' : 'project'}: ${val && val !== '-' ? val : '(cleared)'}`);
+  return;
+}
+if (['star', 'unstar', 'archive', 'unarchive'].includes(cmd)) {
+  if (pos.length < 2) die(`usage: fugu-sessions ${cmd} <id>...`, 2);
+  const key = cmd.endsWith('star') ? 'star' : 'archived', on = !cmd.startsWith('un');
+  for (const ref of pos.slice(1)) { const s = resolve(ref); m(s.id)[key] = on; tidy(s.id); console.log(`${s.id.slice(0, 8)} ${cmd}${cmd.endsWith('e') ? 'd' : 'red'}`); }
+  F.saveMeta(meta);
+  return;
+}
+
+// --- save / saved / restore: copies only, never moves or deletes ---
+function copyIfNewer(src, dst) {
+  let a, b;
+  try { a = fs.statSync(src); } catch { return false; }
+  try { b = fs.statSync(dst); } catch {}
+  if (b && b.size === a.size && b.mtimeMs >= a.mtimeMs) return false;
+  fs.mkdirSync(path.dirname(dst), { recursive: true, mode: 0o700 });
+  fs.copyFileSync(src, dst);
+  fs.chmodSync(dst, 0o600);
+  fs.utimesSync(dst, a.atime, a.mtime);
+  return true;
+}
+function copySession(fromFile, toFile) {
+  let n = copyIfNewer(fromFile, toFile) ? 1 : 0;
+  const sdir = fromFile.replace(/\.jsonl$/, '') + '/subagents';
+  let sf = [];
+  try { sf = fs.readdirSync(sdir); } catch {}
+  for (const x of sf) if (copyIfNewer(path.join(sdir, x), path.join(toFile.replace(/\.jsonl$/, ''), 'subagents', x))) n++;
+  return n;
+}
+function archived() {
+  const out = [];
+  let dirs = [];
+  try { dirs = fs.readdirSync(F.FILES.archive); } catch {}
+  for (const d of dirs) {
+    let files = [];
+    try { files = fs.readdirSync(path.join(F.FILES.archive, d)).filter(f => f.endsWith('.jsonl')); } catch {}
+    for (const f of files) {
+      const fp = path.join(F.FILES.archive, d, f);
+      try { out.push({ id: f.slice(0, -6), dirName: d, file: fp, st8: fs.statSync(fp) }); } catch {}
+    }
+  }
+  return out;
+}
+
+if (cmd === 'save') {
+  const keep = F.cleanupDays();
+  const expiring = s => now - s.mtime > (keep - 7) * 86400e3;
+  let pick;
+  if (pos.length > 1) pick = pos.slice(1).map(resolve);
+  else {
+    const want = { starred: has('--starred'), expiring: has('--expiring'), all: has('--all') };
+    if (!want.starred && !want.expiring && !want.all) want.starred = want.expiring = true;
+    pick = all.filter(s => want.all || (want.starred && (meta[s.id] || {}).star) || (want.expiring && expiring(s)));
+  }
+  let copied = 0, files = 0;
+  for (const s of pick) {
+    const n = copySession(s.file, path.join(F.FILES.archive, s.dirName, `${s.id}.jsonl`));
+    if (n) { copied++; files += n; }
+  }
+  console.log(`🐡 saved ${copied} of ${pick.length} session${pick.length === 1 ? '' : 's'} (${files} file${files === 1 ? '' : 's'} copied, the rest already current) to ${F.FILES.archive}`);
+  console.log(C('2', `   Claude Code deletes transcripts after ${keep} days (cleanupPeriodDays). Saved copies are kept until you remove them.`));
+  return;
+}
+if (cmd === 'saved') {
+  const live = new Set(all.map(s => s.id));
+  const rows = archived().sort((a, b) => b.st8.mtimeMs - a.st8.mtimeMs);
+  if (AS_JSON) { console.log(JSON.stringify(rows.map(r => ({ id: r.id, dir: r.dirName, file: r.file, size: r.st8.size, mtime: r.st8.mtimeMs, live: live.has(r.id), name: (meta[r.id] || {}).name || null })), null, 2)); return; }
+  console.log(`🐡 fugu saved sessions: ${rows.length} in ${F.FILES.archive}\n`);
+  for (const r of rows.slice(0, LIMIT)) {
+    const tag = live.has(r.id) ? C('2', 'live   ') : C('33', 'pruned ');
+    console.log(`  ${tag} ${ago(r.st8.mtimeMs).padStart(4)}  ${r.id.slice(0, 8)}  ${F.clean(r.dirName).slice(-30).padEnd(30)}  ${F.clean((meta[r.id] || {}).name || '')}`);
+  }
+  console.log(C('2', '\n  pruned = Claude Code already deleted the original; `fugu-sessions restore <id>` puts it back.'));
+  return;
+}
+if (cmd === 'restore') {
+  const r = String(pos[1] || '').toLowerCase();
+  if (r.length < 6) die('usage: fugu-sessions restore <id> (6+ characters)', 2);
+  const hits = archived().filter(a => a.id.toLowerCase().startsWith(r));
+  if (hits.length !== 1) die(hits.length ? `"${F.clean(pos[1])}" matches ${hits.length} saved sessions` : `no saved session ${F.clean(pos[1])}`, 2);
+  const a = hits[0], root = path.join(F.HOME, '.claude', 'projects');
+  const dst = path.join(root, a.dirName, `${a.id}.jsonl`);
+  if (fs.existsSync(dst)) { console.log(`${a.id.slice(0, 8)} is already in ${path.dirname(dst)}; nothing to restore.`); return; }
+  copySession(a.file, dst);
+  console.log(`🐡 restored ${a.id} to ${path.dirname(dst)}\n   resume: claude --resume ${a.id}  (from the session's project directory)`);
+  return;
+}
+
+// --- rows ---
+const clean = F.clean;
+function row(s) {
+  const st = s.state, mm = meta[s.id] || {};
+  const ageMs = now - s.mtime;
+  return {
+    id: s.id, project: clean(st.cwd) || s.decoded, projectName: nameProject(clean(st.cwd), mm.project), file: s.file,
+    mtime: s.mtime, size: s.size, status: ageMs < 60e3 ? 'active' : ageMs < 3600e3 ? 'recent' : 'idle',
+    title: clean(mm.name || st.customTitle || mm.label || st.aiTitle || st.slug || st.summary),
+    summary: clean(mm.summary || st.summary), messages: st.count, lastTs: st.last,
+    name: mm.name || null, star: !!mm.star, archived: !!mm.archived, cost: Math.round(F.sessionCost(s) * 100) / 100,
+  };
+}
+
+// --- label: Haiku names and summarizes sessions (opt-in, model.haiku=on) ---
+if (cmd === 'label') {
+  if (F.readConfig()['model.haiku'] !== 'on') die('Haiku labeling is off. Turn it on with: fugu-config set model.haiku on', 3);
+  const todo = all.filter(s => s.state.count && !(meta[s.id] || {}).archived && !(meta[s.id] || {}).label)
+    .sort((a, b) => b.mtime - a.mtime).slice(0, has('--limit') ? LIMIT : 20).map(row);
+  if (!todo.length) { console.log('🐡 every session already has a label.'); return; }
+  // Only titles and first-prompt snippets leave the machine, never transcripts.
+  const lines = todo.map(r => [r.id.slice(0, 8), r.title, r.summary, r.projectName].map(v => clean(v).replace(/\t/g, ' ').slice(0, 120)).join('\t'));
+  const prompt = 'Each line is a coding session: id<TAB>current title<TAB>first prompt<TAB>project.\n'
+    + 'For every line write a name (at most 6 words) and a summary (one sentence, at most 15 words) of what the session was for.\n'
+    + 'Reply with only a JSON object: {"<id>": {"name": "...", "summary": "..."}}\n\n' + lines.join('\n');
+  if (has('--dry-run')) { console.log(prompt); return; }
+  const res = spawnSync('claude', ['-p', '--model', 'haiku', '--no-session-persistence', '--tools', '',
+    '--strict-mcp-config', '--setting-sources', '', '--disable-slash-commands', '--output-format', 'json',
+    '--system-prompt', 'You label coding sessions. Output JSON only.'], { input: prompt, encoding: 'utf8', timeout: 180000 });
+  if (res.error || res.status !== 0) die(`claude -p failed: ${clean((res.error && res.error.message) || res.stderr).slice(0, 200)}`);
+  let out, labels;
+  try { out = JSON.parse(res.stdout); labels = JSON.parse(String(out.result).replace(/^[^{]*/, '').replace(/[^}]*$/, '')); } catch { die('could not parse the Haiku reply'); }
+  let n = 0;
+  for (const r of todo) {
+    const l = labels[r.id.slice(0, 8)];
+    if (!l || typeof l.name !== 'string') continue;
+    Object.assign(m(r.id), { label: clean(l.name).slice(0, 60), summary: clean(l.summary).slice(0, 160) });
+    n++;
+  }
+  F.saveMeta(meta);
+  const usd = Number(out.total_cost_usd);
+  const sp = F.readJson(F.FILES.spend, {}) || {}, h = sp.haiku || { usd: 0, calls: 0 };
+  sp.haiku = { usd: h.usd + (Number.isFinite(usd) ? usd : 0), calls: h.calls + 1 };
+  F.writePrivate(F.FILES.spend, JSON.stringify(sp, null, 1) + '\n');
+  console.log(`🐡 labeled ${n} of ${todo.length} sessions with Haiku${Number.isFinite(usd) ? ` · $${usd.toFixed(4)}` : ''}`);
+  return;
+}
+
+// --- list ---
+const SEARCH = flag('--search', null);
+const SELF = process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || '';
+let rows = all.filter(s => s.state && s.state.count).map(row);
+if (!has('--archived')) rows = rows.filter(r => !r.archived);
+if (has('--starred')) rows = rows.filter(r => r.star);
+if (has('--active')) rows = rows.filter(r => r.status !== 'idle');
+if (SEARCH) rows = rows.filter(r => `${r.title} ${r.summary} ${r.projectName}`.toLowerCase().includes(SEARCH.toLowerCase()));
+rows.sort((a, b) => b.mtime - a.mtime);
+const top = rows.slice(0, LIMIT);
+
+if (AS_JSON) { console.log(JSON.stringify(top, null, 2)); return; }
+
+const DOT = { active: C('32', '●'), recent: C('33', '○'), idle: C('2', '·') };
+const usd = v => v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`;
+console.log(`🐡 fugu radar: ${rows.length} sessions${has('--active') ? ' (active/recent)' : ''}, newest ${top.length}:\n`);
+for (const s of top) {
+  const me = s.id === SELF ? C('36', ' ◀ you') : '';
+  const star = s.star ? C('33', '★ ') : '';
+  console.log(`  ${DOT[s.status]} ${ago(s.mtime).padStart(4)}  ${s.projectName.padEnd(28).slice(0, 28)}  ${String(s.messages).padStart(4)}msg ${usd(s.cost).padStart(7)}  ${star}${s.title.slice(0, 56)}${me}`);
+  console.log(C('2', `         claude --resume ${s.id}`));
+}
+console.log(C('2', '\n  ● <1m  ○ <1h  · idle   ★ starred   $ ≈ API list price   fork: claude --resume <id> --fork-session'));
+})();

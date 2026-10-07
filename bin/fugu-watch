@@ -47,7 +47,7 @@ function label(fp, dirName) {
   // Cheap title: reuse the radar's cache if present, else project dir name.
   try {
     const cache = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.fugu', 'sessions-cache.json'), 'utf8'));
-    const rec = cache[fp];
+    const rec = (cache.files || {})[fp];
     const st = rec && (rec.disp || rec.state);
     if (st) return clean(st.customTitle || st.aiTitle || st.slug || st.summary) || dirName;
   } catch {}

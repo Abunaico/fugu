@@ -57,6 +57,7 @@ with `fugu-config layout new <name>` (copies the active layout to edit).
 | `cache-why` | `(1h tier, every message resets it)` |
 | `cost` | `$0.20` |
 | `cost-words` | `$0.20 this session` |
+| `nudge` | `/compact before a break` (only past 150k tokens; yellow under 10 minutes of cache; `hud.nudge` hides it) |
 | `duration` | `1h12m total` session time |
 | `api-time` | `14m in API` |
 | `lines` | `+120 -34 lines` changed this session |

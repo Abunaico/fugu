@@ -5,5 +5,5 @@
 # Every widget name is listed in layouts/README.md.
 lines:
   - [fish, model, mode, ·, account, plan]
-  - [context-bar, context-pct, 5h, 5h-reset, 5h-pace, 7d, 7d-reset, 7d-pace, cache, ·, cost]
+  - [context-bar, context-pct, 5h, 5h-reset, 5h-pace, 7d, 7d-reset, 7d-pace, cache, ·, cost, nudge]
   - [dir, ·, git]

@@ -24,21 +24,6 @@ const now = Date.now() / 1000;
 const clean = v => String(v == null ? '' : v).replace(/[\x00-\x1f\x7f\u0080-\u009f]/g, ' ');
 const readJson = fp => { try { return JSON.parse(fs.readFileSync(fp, 'utf8')); } catch { return null; } };
 
-// --- discover profile dirs (each holds a .claude.json) ---
-const dirs = new Map(); // resolved dir → label
-const add = (d, label) => {
-  const r = path.resolve(d);
-  if (!dirs.has(r) && fs.existsSync(path.join(r, '.claude.json'))) dirs.set(r, label);
-};
-const addParent = p => { try { for (const n of fs.readdirSync(p).sort()) add(path.join(p, n), n); } catch {} };
-add(HOME, 'default');
-if (process.env.CLAUDE_CONFIG_DIR) add(process.env.CLAUDE_CONFIG_DIR, path.basename(process.env.CLAUDE_CONFIG_DIR));
-addParent(path.join(HOME, '.aimux', 'profiles'));
-addParent(path.join(HOME, '.claude-profiles'));
-for (const p of (process.env.FUGU_PROFILE_DIRS || '').split(':').filter(Boolean)) {
-  if (fs.existsSync(path.join(p, '.claude.json'))) add(p, path.basename(p)); else addParent(p);
-}
-
 // cksum(1) of the email, matching the HUD's usage-<cksum> file name.
 const CRC = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n << 24; for (let k = 0; k < 8; k++) c = c & 0x80000000 ? (c << 1) ^ 0x04c11db7 : c << 1; t.push(c >>> 0); } return t; })();
 function cksum(str) {
@@ -85,8 +70,7 @@ function usageFor(email, cfg) {
 }
 
 const rows = [];
-for (const [dir, label] of dirs) {
-  const cfg = readJson(path.join(dir, '.claude.json')) || {};
+for (const { dir, label, cfg } of require('../lib/fugu.js').profiles()) {
   const oa = cfg.oauthAccount || {};
   const email = clean(oa.emailAddress);
   rows.push({
