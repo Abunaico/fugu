@@ -637,11 +637,11 @@ ss archive eeeeeeee >/dev/null; chk "archive hides" "$(ss --json | jq length)" "
 chk "--archived shows" "$(ss --archived --json | jq length)" "1"
 ss unarchive eeeeeeee >/dev/null
 ss name ee x >/dev/null 2>&1; chk "short id refused" "$?" "2"
-chk "meta file is private" "$(stat -f %Lp "$TB/.fugu/sessions-meta.json" 2>/dev/null || stat -c %a "$TB/.fugu/sessions-meta.json")" "600"
+chk "meta file is private" "$(stat -c %a "$TB/.fugu/sessions-meta.json" 2>/dev/null || stat -f %Lp "$TB/.fugu/sessions-meta.json")" "600"
 ss save >/dev/null
 SV="$TB/.fugu/archive/-tmp-burn/eeeeeeee-1111-2222-3333-444444444444.jsonl"
 [ -f "$SV" ] && ok "save copies starred session" || bad "save copies starred session"
-chk "saved copy is private" "$(stat -f %Lp "$SV" 2>/dev/null || stat -c %a "$SV")" "600"
+chk "saved copy is private" "$(stat -c %a "$SV" 2>/dev/null || stat -f %Lp "$SV")" "600"
 rm "$BF"
 chk "saved lists pruned" "$(ss saved --json | jq '.[0].live')" "false"
 ss restore eeeeeeee >/dev/null
