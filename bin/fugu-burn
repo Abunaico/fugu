@@ -573,9 +573,10 @@ ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = cha
     fish = `<span class="fishes" aria-hidden="true"><img class="flat" src="${flat}" alt=""><img class="puff" src="${puff}" alt=""></span>`;
   } catch {}
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FUGU the BURN</title>${icon}<style>
+<title>FUGU · Fu the Bloat. Cool the Burn.</title>${icon}<style>
 ${css}</style></head><body>
-<h1>${fish || '🐡 '}FUGU <span class="the">the</span> BURN <em>[${e(title)}]</em></h1>${body}
+<h1>${fish || '🐡 '}FUGU <em>[ ${e(title)} ]</em></h1>
+<p class="tagline">Fu the Bloat. Cool the Burn.</p>${body}
 <p class="note">Generated ${e(new Date().toISOString().slice(0, 16).replace('T', ' '))} from local Claude Code transcripts. Costs are estimates at Anthropic API list prices. Click a column to sort; type in a filter box to narrow a long table. Indented rows stay with their group.</p>
 <script>
 function sortable(t) {

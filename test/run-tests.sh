@@ -556,7 +556,7 @@ burn --html "$TB/r.html" >/dev/null
 grep -q '<img src=x\|<script>alert' "$TB/r.html" && bad "html escapes transcript text" || ok "html escapes transcript text"
 grep -c 'src="data:image/png;base64,' "$TB/r.html" | grep -q '^1$' && grep -q 'class="flat" src="data:image/png' "$TB/r.html" && grep -q 'class="puff" src="data:image/png' "$TB/r.html" && ok "flat and puffed fish inline in the header" || bad "flat and puffed fish inline in the header"
 grep -q 'rel="icon" href="data:image/png;base64,' "$TB/r.html" && ok "fish favicon embedded" || bad "fish favicon embedded"
-grep -q 'FUGU <span class="the">the</span> BURN <em>\[' "$TB/r.html" && ok "heading reads FUGU the BURN [range]" || bad "heading reads FUGU the BURN [range]"
+grep -q 'FUGU <em>\[ ' "$TB/r.html" && grep -q '<p class="tagline">Fu the Bloat. Cool the Burn.</p>' "$TB/r.html" && ok "heading FUGU [range] with tagline" || bad "heading FUGU [range] with tagline"
 grep -qE '(src|href)="(https?:)?//' "$TB/r.html" && bad "report has no external URLs" || ok "report has no external URLs"
 grep -q '<td class="n" data-v="[^"]*">Hermes' "$TB/r2.html" && bad "text cells are not numeric" || ok "text cells are not numeric"
 HOME=$TB node bin/fugu-burn --html "$TB/r3.html" >/dev/null; grep -q '<th tabindex="0">Project</th>' "$TB/r3.html" && ok "text column headers left-aligned" || bad "text column headers left-aligned"
