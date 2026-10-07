@@ -631,7 +631,7 @@ ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = cha
     icon = `<link rel="icon" href="${flat}">`;
     // The terminal's ANSI fish as tiny pixel PNGs: body, puffed, and a strip of 34px cels.
     const strip = fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', 'fugu-cels.png'));
-    css += `\n:root{--fugu-body:url(${uri('fugu-body.png')}); --puff-cels:url(${uri('fugu-puff-cels.png')}); --cels:url(${uri('fugu-cels.png')}); --strip:${strip.readUInt32BE(16)}px}\n`;
+    css += `\n:root{--fugu-body:url(${uri('fugu-body.png')}); --puff-cels:url(${uri('fugu-puff-cels.png')}); --cels:url(${uri('fugu-cels.png')}); --strip:${strip.readUInt32BE(16) * 2}px}\n`;
     fish = `<span class="fishes" aria-hidden="true"><img class="flat" src="${flat}" alt=""><img class="puff" src="${puff}" alt=""></span>`;
   } catch {}
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -796,7 +796,7 @@ if (fish) {
     const r = fish.getBoundingClientRect(), tail = turned > 0 ? r.left + 6 : r.right - 10;
     bubbles(2 + Math.floor(Math.random() * 2), tail, r.top + 22, 4, 7, 0.7);
   };
-  const draw = () => { fish.style.transform = 'translateX(' + x.toFixed(1) + 'px)'; fish.classList.toggle('right', turned > 0); fish.classList.toggle('show', x > -40); };
+  const draw = () => { fish.style.transform = 'translateX(' + x.toFixed(1) + 'px)'; fish.classList.toggle('right', turned > 0); fish.classList.toggle('show', x > -74); };
   const calm = () => { scared = startled = false; face = 0; cel('face', 0); go(); };
   const swim = () => {
     if (scared && x <= -90) { moving = kicking = false; v = 0; fish.classList.remove('moving'); fish.style.setProperty('--rot', '0deg'); calm(); return; }

@@ -704,7 +704,7 @@ echo "$hp" | grep -q "FUGU v$(jq -r .version .claude-plugin/plugin.json)" && ok 
 echo "$hp" | grep -q 'fugu-burn --add-rule' && ok "help explains report customizations" || bad "help explains report customizations"
 chk "color help draws the fish" "$(node bin/fugu-help --color | grep -c '▀')" "9"
 chk "plain help starts with the one-color fish" "$(node bin/fugu-help --plain | head -13 | grep -c '█')" "11"
-grep -q -- '--fugu-body:url(data:image/png;base64,' "$TB/r.html" && grep -q -- '--cels:url(data:image/png;base64,' "$TB/r.html" && grep -q -- '--strip:714px' "$TB/r.html" && ok "pixel fish and cel strip embedded" || bad "pixel fish and cel strip embedded"
+grep -q -- '--fugu-body:url(data:image/png;base64,' "$TB/r.html" && grep -q -- '--cels:url(data:image/png;base64,' "$TB/r.html" && grep -q -- '--strip:1428px' "$TB/r.html" && ok "pixel fish and cel strip embedded" || bad "pixel fish and cel strip embedded"
 grep -q 'data-mood' "$TB/r.html" && bad "fish ignores the report's results" || ok "fish ignores the report's results"
 grep -q 'class="totop"' "$TB/r.html" && grep -q -- '--puff-cels:url(data:image/png;base64,' "$TB/r.html" && grep -q "body.animate(" "$TB/r.html" && ok "fish back-to-top button puffs" || bad "fish back-to-top button puffs"
 TD=$(mktemp -d); burn --html "$TD" >/dev/null; ls "$TD" | grep -qE '^fugu-burn-all-accounts-[0-9-]+(_[0-9-]+)?\.html$' && ok "html into a folder is named for all accounts" || bad "html into a folder is named for all accounts"

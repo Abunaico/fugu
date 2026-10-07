@@ -108,7 +108,7 @@ h1 .puff,h1:hover .flat{opacity:0} h1:hover .puff{opacity:1}
 tr[hidden]{display:none}
 /* back to top: a small ANSI FUGU swims along the bottom as you scroll (the script moves him),
    puffs up when clicked, and swims you back up. The art faces left; .right mirrors it. */
-.totop{position:fixed; left:0; bottom:16px; z-index:15; width:34px; height:32px; padding:0; border:0; background:none; cursor:pointer;
+.totop{position:fixed; left:0; bottom:16px; z-index:15; width:68px; height:64px; padding:0; border:0; background:none; cursor:pointer;
   filter:drop-shadow(2px 2px 0 var(--shadow)); opacity:0; visibility:hidden; transition:opacity .25s, visibility .25s, translate .15s}
 .totop.show{opacity:1; visibility:visible}
 .totop:hover{translate:0 -3px}
@@ -116,9 +116,9 @@ tr[hidden]{display:none}
    The script picks each layer's cel by index (--face, --pec, --fin, --tail). */
 .totop i{display:block; width:100%; height:100%; image-rendering:pixelated; background-repeat:no-repeat;
   background-image:var(--cels), var(--cels), var(--cels), var(--cels), var(--fugu-body);
-  background-size:var(--strip) auto, var(--strip) auto, var(--strip) auto, var(--strip) auto, 34px auto;
-  background-position:calc(var(--face, 0) * -34px) 100%, calc(var(--pec, 0) * -34px) 100%,
-    calc(var(--fin, 6) * -34px) 100%, calc(var(--tail, 3) * -34px) 100%, 50% 100%}
+  background-size:var(--strip) auto, var(--strip) auto, var(--strip) auto, var(--strip) auto, 68px auto;
+  background-position:calc(var(--face, 0) * -68px) 100%, calc(var(--pec, 0) * -68px) 100%,
+    calc(var(--fin, 6) * -68px) 100%, calc(var(--tail, 3) * -68px) 100%, 50% 100%}
 .totop.right i{transform:scaleX(-1)}
 /* the body rocks against the tail beat (--rot, set per kick); at rest he bobs, stepped like cels */
 .totop i{rotate:var(--rot, 0deg); transition:rotate .08s steps(2)}
@@ -126,7 +126,7 @@ tr[hidden]{display:none}
 @keyframes bob{50%{translate:0 -2px}}
 .totop.moving span{animation:none}
 /* puffed: his own 3-cel strip (rest, paddle up, paddle down); the script cycles --pf while he floats */
-.totop.puffed i{background:var(--puff-cels) no-repeat calc(var(--pf, 0) * -34px) 100%/102px auto}
+.totop.puffed i{background:var(--puff-cels) no-repeat calc(var(--pf, 0) * -68px) 100%/204px auto}
 /* the startle gag animates the span (squash and stretch, roll, lift) with the Web Animations API,
    so it never touches his facing (<i>) or his position (.totop) */
 .totop.gag span{animation:none} .totop.gag i{transition:none}
