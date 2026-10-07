@@ -68,6 +68,7 @@ function aggregate(from, to) {
     F.eachDay(s, (d, b, isMain, agent) => {
       if (d < from || d > to) return;
       touched = true; sDays.add(d);
+      if (!A.firstDay || d < A.firstDay) A.firstDay = d;
       for (const [c, mm] of Object.entries(b.k || {})) for (const [m, u] of Object.entries(mm)) add(sWk, c, F.costOf(m, u));
       for (const [m, u] of Object.entries(b.u)) {
         const c = F.costOf(m, u), big = /opus|fable|mythos/.test(m);
@@ -156,6 +157,9 @@ function aggregate(from, to) {
     }
   }
   A.unpriced = [...A.unpriced];
+  // Rates and monthly savings count from the first active day, so a wide --since
+  // doesn't dilute them across months with no sessions.
+  if (A.firstDay && A.firstDay > from) A.days = span(A.firstDay, to);
   for (const X of Object.values(A.accounts)) { X.sessions = X.ids.size; delete X.ids; }
   return A;
 }

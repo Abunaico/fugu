@@ -566,6 +566,7 @@ chk "untagged title falls back to its start" "$(echo "$J" | jq -r '.A.list[0].ta
 chk "insights ranked by saving" "$(echo "$J" | jq '[.insights[].save] | . == (sort | reverse)')" "true"
 chk "fugu cost footer present" "$(echo "$J" | jq '.fugu.skillTok > 100')" "true"
 chk "git off unless asked" "$(echo "$J" | jq '.git')" "null"
+chk "rates count from the first active day" "$(burn --since 2020-01-01 --json | jq '.A.days < 5')" "true"
 burn --since-change nope >/dev/null 2>&1; chk "bad date rejected" "$?" "2"
 
 echo "— burn: accounts —"
