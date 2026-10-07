@@ -556,8 +556,10 @@ burn --html "$TB/r.html" >/dev/null
 grep -q '<img src=x\|<script>alert' "$TB/r.html" && bad "html escapes transcript text" || ok "html escapes transcript text"
 grep -c 'src="data:image/png;base64,' "$TB/r.html" | grep -q '^1$' && grep -q 'class="flat" src="data:image/png' "$TB/r.html" && grep -q 'class="puff" src="data:image/png' "$TB/r.html" && ok "flat and puffed fish inline in the header" || bad "flat and puffed fish inline in the header"
 grep -q 'rel="icon" href="data:image/png;base64,' "$TB/r.html" && ok "fish favicon embedded" || bad "fish favicon embedded"
-grep -q 'FUGU <span class="the">the</span> BURN <em>\[' "$TB/r.html" && ok "heading reads FUGU the BURN [range]" || bad "heading reads FUGU the BURN [range]"
+grep -q 'FUGU <em>\[ ' "$TB/r.html" && grep -q '<p class="tagline">Fu the Bloat. Cool the Burn.</p>' "$TB/r.html" && ok "heading FUGU [range] with tagline" || bad "heading FUGU [range] with tagline"
 grep -qE '(src|href)="(https?:)?//' "$TB/r.html" && bad "report has no external URLs" || ok "report has no external URLs"
+grep -q '<td class="n" data-v="[^"]*">Hermes' "$TB/r2.html" && bad "text cells are not numeric" || ok "text cells are not numeric"
+HOME=$TB node bin/fugu-burn --html "$TB/r3.html" >/dev/null; grep -q '<th tabindex="0">Project</th>' "$TB/r3.html" && ok "text column headers left-aligned" || bad "text column headers left-aligned"
 burn --since-change "$D" | grep -q 'Spend per day' && ok "before/after renders" || bad "before/after renders"
 burn --since-change "$D" | grep -q 'BY AGENT' && ok "before/after carries the full report" || bad "before/after carries the full report"
 burn --since-change "$D" --html "$TB/c.html" >/dev/null; grep -c 'class="panel"' "$TB/c.html" | grep -q 2 && ok "compare html has before and after panels" || bad "compare html has before and after panels"
@@ -566,6 +568,7 @@ chk "untagged title falls back to its start" "$(echo "$J" | jq -r '.A.list[0].ta
 chk "insights ranked by saving" "$(echo "$J" | jq '[.insights[].save] | . == (sort | reverse)')" "true"
 chk "fugu cost footer present" "$(echo "$J" | jq '.fugu.skillTok > 100')" "true"
 chk "git off unless asked" "$(echo "$J" | jq '.git')" "null"
+chk "rates count from the first active day" "$(burn --since 2020-01-01 --json | jq '.A.days < 5')" "true"
 burn --since-change nope >/dev/null 2>&1; chk "bad date rejected" "$?" "2"
 
 echo "— burn: accounts —"
@@ -606,6 +609,66 @@ chk "work types sum to total" "$(echo "$WJ" | jq '([.A.work[].usd] | add) - .A.u
 chk "subagent cost by agent type" "$(echo "$WJ" | jq '[.A.agents["ucef-core:quality:qa-engineer"].usd, .A.agents["ucef-core:quality:qa-engineer"].runs] | join(" ")' -r)" "2 1"
 chk "main thread is your turns" "$(echo "$WJ" | jq '.A.agents[""].usd')" "8"
 rm -rf "$TW"
+
+echo "— codex —"
+TC=$(mktemp -d); CX="$TC/.codex/sessions/2026/10/01"; mkdir -p "$CX" "$TC/.claude/projects"
+cxl() { printf '%s\n' "$1" >> "$2"; }
+P1="$CX/rollout-2026-10-01T10-00-00-11111111-2222-3333-4444-555555555555.jsonl"
+cxl '{"timestamp":"'$D'T10:00:00Z","type":"session_meta","payload":{"id":"11111111-2222-3333-4444-555555555555","cwd":"/tmp/cxproj","originator":"codex-tui"}}' "$P1"
+cxl '{"timestamp":"'$D'T10:00:01Z","type":"turn_context","payload":{"model":"gpt-test-codex","cwd":"/tmp/cxproj"}}' "$P1"
+cxl '{"timestamp":"'$D'T10:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md injected block, not a prompt"}]}}' "$P1"
+cxl '{"timestamp":"'$D'T10:00:02Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fix the login bug please"}]}}' "$P1"
+cxl '{"timestamp":"'$D'T10:00:02Z","type":"event_msg","payload":{"type":"task_started"}}' "$P1"
+cxl '{"timestamp":"'$D'T10:00:03Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","input":"*** Begin Patch\n*** Update File: src/app.js\n"}}' "$P1"
+cxl '{"timestamp":"'$D'T10:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":50}}}}' "$P1"
+cxl '{"timestamp":"'$D'T10:00:05Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":50}}}}' "$P1"
+cxl '{"timestamp":"'$D'T10:00:06Z","type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{\"cmd\":\"git commit -m x\"}"}}' "$P1"
+cxl '{"timestamp":"'$D'T10:00:07Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":3000,"cached_input_tokens":2400,"output_tokens":80}}}}' "$P1"
+cxl '{"timestamp":"'$D'T10:00:08Z","type":"compacted","payload":{"message":""}}' "$P1"
+P2="$CX/rollout-2026-10-01T10-05-00-66666666-7777-8888-9999-000000000000.jsonl"
+cxl '{"timestamp":"'$D'T10:05:00Z","type":"session_meta","payload":{"id":"66666666-7777-8888-9999-000000000000","cwd":"/tmp/cxproj","source":{"subagent":{"thread_spawn":{"parent_thread_id":"11111111-2222-3333-4444-555555555555","agent_role":"explorer"}}}}}' "$P2"
+cxl '{"timestamp":"'$D'T10:05:01Z","type":"turn_context","payload":{"model":"gpt-test-codex"}}' "$P2"
+cxl '{"timestamp":"'$D'T10:05:02Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500,"cached_input_tokens":0,"output_tokens":10}}}}' "$P2"
+printf '{"id":"11111111-2222-3333-4444-555555555555","thread_name":"Fix login bug"}\n' > "$TC/.codex/session_index.jsonl"
+CJ=$(HOME=$TC node bin/fugu-burn --json)
+chk "codex requests from token totals (repeat ignored)" "$(echo "$CJ" | jq '.A.models["gpt-test-codex"].u[5]')" "3"
+chk "codex uncached / cached / output split" "$(echo "$CJ" | jq -c '.A.models["gpt-test-codex"].u[0:5]')" "[1100,2400,0,0,90]"
+chk "codex work types from tool calls" "$(echo "$CJ" | jq -c '[.A.work.code.reqs, .A.work.shell.reqs, .A.work.talk.reqs]')" "[1,1,1]"
+chk "codex subagent attached to its parent" "$(echo "$CJ" | jq '[.A.sessions, .A.agents["codex:explorer"].runs] | join(" ")' -r)" "1 1"
+chk "codex prompts, commits, compaction" "$(echo "$CJ" | jq -c '[.A.prompts, .A.commits, .A.comp[0]]')" "[1,1,1]"
+chk "codex unpriced without prices.json" "$(echo "$CJ" | jq '[.A.usd, (.A.unpriced | index("gpt-test-codex") != null)] | join(" ")' -r)" "0 true"
+chk "codex account label" "$(echo "$CJ" | jq -r '.A.accounts | keys[0]')" "Codex (ChatGPT login)"
+mkdir -p "$TC/.fugu"; printf '{"models":{"gpt-test":{"input":2,"cached":0.5,"output":8}}}' > "$TC/.fugu/prices.json"
+# (600 + 500 uncached) × $2 + 2400 cached × $0.5 + 90 output × $8 = $0.004120
+chk "prices.json prices codex by prefix" "$(HOME=$TC node bin/fugu-burn --json | jq '.A.usd * 1e6 | round')" "4120"
+R=$(HOME=$TC node bin/fugu-sessions --tool codex --json)
+chk "radar lists codex with its title and resume" "$(echo "$R" | jq -r '.[0] | [.title, .resume] | join(" | ")')" "Fix login bug | codex resume 11111111-2222-3333-4444-555555555555"
+chk "radar --tool claude excludes codex" "$(HOME=$TC node bin/fugu-sessions --tool claude --json | jq length)" "0"
+HOME=$TC node bin/fugu-sessions save 11111111 >/dev/null; rm "$P1"
+HOME=$TC node bin/fugu-sessions restore 11111111 >/dev/null
+[ -f "$P1" ] && ok "codex save and restore keep the rollout path" || bad "codex save and restore keep the rollout path"
+rm -rf "$TC"
+
+echo "— update —"
+TU=$(mktemp -d); mkdir -p "$TU/.claude/plugins" "$TU/proj"
+git init -q --bare "$TU/origin.git"; git -C "$TU/origin.git" symbolic-ref HEAD refs/heads/main; git clone -q "$TU/origin.git" "$TU/mp" 2>/dev/null
+mkdir -p "$TU/mp/.claude-plugin"; printf '{"version":"1.0.0"}' > "$TU/mp/.claude-plugin/plugin.json"
+git -C "$TU/mp" add -A; git -C "$TU/mp" -c user.email=t@t -c user.name=t commit -qm one; git -C "$TU/mp" push -q origin HEAD:main 2>/dev/null; git -C "$TU/mp" branch -q -M main
+git clone -q "$TU/origin.git" "$TU/up" 2>/dev/null; printf '{"version":"1.1.0"}' > "$TU/up/.claude-plugin/plugin.json"
+git -C "$TU/up" -c user.email=t@t -c user.name=t commit -qam two; git -C "$TU/up" push -q origin HEAD:main 2>/dev/null
+printf '{"fugu-tools":{"source":{"source":"directory","path":"%s"}}}' "$TU/mp" > "$TU/.claude/plugins/known_marketplaces.json"
+printf '{"plugins":{"fugu@fugu-tools":[{"scope":"user","version":"1.0.0"},{"scope":"project","version":"1.0.0","projectPath":"%s"}]}}' "$TU/proj" > "$TU/.claude/plugins/installed_plugins.json"
+printf '#!/bin/sh\necho "$PWD $*" >> "%s/calls"\n' "$TU" > "$TU/claude"; chmod +x "$TU/claude"
+upd() { HOME=$TU FUGU_CLAUDE=$TU/claude node bin/fugu-update "$@"; }
+upd --check >/dev/null
+chk "--check changes nothing" "$(jq -r .version "$TU/mp/.claude-plugin/plugin.json") $( [ -f "$TU/calls" ] && echo called || echo none)" "1.0.0 none"
+printf 'local edit' >> "$TU/mp/.claude-plugin/plugin.json"; upd >/dev/null 2>&1
+chk "dirty clone never pulled" "$(git -C "$TU/mp" rev-list --count HEAD)" "1"
+git -C "$TU/mp" checkout -q -- .; : > "$TU/calls"; upd >/dev/null 2>&1
+chk "clean main fast-forwarded" "$(jq -r .version "$TU/mp/.claude-plugin/plugin.json")" "1.1.0"
+chk "marketplace refreshed, each scope updated" "$(cut -d' ' -f2- "$TU/calls" | tr '\n' ';')" "plugin marketplace update fugu-tools;plugin update fugu@fugu-tools --scope user;plugin update fugu@fugu-tools --scope project;"
+chk "project scope runs in its project" "$(grep -c "/proj plugin update fugu@fugu-tools --scope project" "$TU/calls")" "1"
+rm -rf "$TU"
 
 echo "— projects: nesting —"
 TN=$(mktemp -d); NP="$TN/.claude/projects/-n"; mkdir -p "$NP" "$TN/work/app/.git" "$TN/work/docs"

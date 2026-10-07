@@ -33,11 +33,12 @@ watches your gauges and puffs up as context fills, same as the fish under threat
 | `/fugu:accounts` | Every Claude Code login on this machine with its 5h/7d usage and reset times |
 | `/fugu:sessions` | Session radar and manager: find, name, star, archive, assign to a project, save before Claude Code deletes them, restore |
 | `/fugu:burn` | Cost by project and model, a practices check, and before/after comparison; `--html` to share |
+| `/fugu:update` | Update fugu to the latest release in every install scope; `check` to just compare |
 | `/fugu:open` | Resume or fork a session into a new tmux/Warp pane |
 | `/fugu:fleet` | Explain or tune the subagent fleet rows |
 | `/fugu:off`, `/fugu:on` | Mute or unmute everything at once |
 | `/fugu:help` | This list |
 
-CLIs behind them (on PATH while fugu is enabled, usable in any terminal): `fugu-hud`, `fugu-config`, `fugu-context`, `fugu-accounts`, `fugu-sessions`, `fugu-burn`.
+CLIs behind them (on PATH while fugu is enabled, usable in any terminal): `fugu-hud`, `fugu-config`, `fugu-context`, `fugu-accounts`, `fugu-sessions`, `fugu-burn`, `fugu-update`.
 
 If a command above reports "Unknown command", fugu was updated during this session: Claude Code reads a plugin's commands at session start, so start a new session (or resume this one) to pick it up.

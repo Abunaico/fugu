@@ -15,7 +15,7 @@ fugu-sessions --limit 15
 Arguments the user passed: "$ARGUMENTS"
 
 **Finding sessions**
-- A project name or substring → `--project <substr>`. A number → `--limit`. "active", "live", "running" → `--active`. A topic → `--search <term>`. "starred" → `--starred`. Archived ones are hidden unless `--archived`.
+- A project name or substring → `--project <substr>`. A number → `--limit`. "active", "live", "running" → `--active`. A topic → `--search <term>`. "starred" → `--starred`. "codex" → `--tool codex` (Codex sessions show `cx` and resume with `codex resume <id>`; never run that inside this session either). Archived ones are hidden unless `--archived`.
 - Status dots: ● written <1m ago (likely live), ○ <1h, · idle. `◀ you` marks this session. ★ is starred. `$` is an estimate at API list prices.
 - Present the output as-is. To open, resume, or fork one, use `/fugu:open`; never run `claude --resume` inside this session.
 

@@ -5,7 +5,7 @@
 // transcripts in ~/.fugu/archive. Nothing here deletes a transcript.
 //
 // Usage: fugu-sessions [--limit N] [--json] [--project <substr>] [--active]
-//                      [--search <text>] [--starred] [--archived] [--reindex]
+//                      [--search <text>] [--starred] [--archived] [--tool claude|codex] [--reindex]
 //        fugu-sessions name <id> <text...>         ("" clears)
 //        fugu-sessions star|unstar|archive|unarchive <id>...
 //        fugu-sessions assign <id> <project>       ("-" clears)
@@ -24,7 +24,7 @@ const flag = (n, d) => { const i = args.indexOf(n); return i >= 0 && i + 1 < arg
 const has = n => args.includes(n);
 const LIMIT = (() => { const n = parseInt(flag('--limit', '15'), 10); return Number.isFinite(n) && n > 0 ? n : 15; })();
 const AS_JSON = has('--json');
-const VALUED = new Set(['--limit', '--project', '--search', '--into']);
+const VALUED = new Set(['--limit', '--project', '--search', '--into', '--tool']);
 const pos = args.filter((a, i) => !a.startsWith('--') && !VALUED.has(args[i - 1]));
 const CMDS = new Set(['merge', 'name', 'star', 'unstar', 'archive', 'unarchive', 'assign', 'save', 'saved', 'restore', 'label']);
 const cmd = CMDS.has(pos[0]) ? pos[0] : null;
@@ -117,17 +117,16 @@ function copySession(fromFile, toFile) {
   for (const x of sf) if (copyIfNewer(path.join(sdir, x), path.join(toFile.replace(/\.jsonl$/, ''), 'subagents', x))) n++;
   return n;
 }
+// Claude saves sit at archive/<project dir>/<id>.jsonl; Codex saves keep their
+// date folders and rollout names under archive/codex/.
 function archived() {
   const out = [];
-  let dirs = [];
-  try { dirs = fs.readdirSync(F.FILES.archive); } catch {}
-  for (const d of dirs) {
-    let files = [];
-    try { files = fs.readdirSync(path.join(F.FILES.archive, d)).filter(f => f.endsWith('.jsonl')); } catch {}
-    for (const f of files) {
-      const fp = path.join(F.FILES.archive, d, f);
-      try { out.push({ id: f.slice(0, -6), dirName: d, file: fp, st8: fs.statSync(fp) }); } catch {}
-    }
+  let files = [];
+  try { files = fs.readdirSync(F.FILES.archive, { recursive: true }).filter(f => f.endsWith('.jsonl') && !/\/subagents\//.test(f)); } catch {}
+  for (const rel of files) {
+    const fp = path.join(F.FILES.archive, rel), codex = rel.startsWith('codex/');
+    const id = codex ? (/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i.exec(rel) || [])[1] || path.basename(rel, '.jsonl') : path.basename(rel, '.jsonl');
+    try { out.push({ id, dirName: path.dirname(rel), file: fp, codex, st8: fs.statSync(fp) }); } catch {}
   }
   return out;
 }
@@ -144,7 +143,7 @@ if (cmd === 'save') {
   }
   let copied = 0, files = 0;
   for (const s of pick) {
-    const n = copySession(s.file, path.join(F.FILES.archive, s.dirName, `${s.id}.jsonl`));
+    const n = copySession(s.file, path.join(F.FILES.archive, s.dirName, s.harness === 'codex' ? path.basename(s.file) : `${s.id}.jsonl`));
     if (n) { copied++; files += n; }
   }
   console.log(`🐡 saved ${copied} of ${pick.length} session${pick.length === 1 ? '' : 's'} (${files} file${files === 1 ? '' : 's'} copied, the rest already current) to ${F.FILES.archive}`);
@@ -168,11 +167,13 @@ if (cmd === 'restore') {
   if (r.length < 6) die('usage: fugu-sessions restore <id> (6+ characters)', 2);
   const hits = archived().filter(a => a.id.toLowerCase().startsWith(r));
   if (hits.length !== 1) die(hits.length ? `"${F.clean(pos[1])}" matches ${hits.length} saved sessions` : `no saved session ${F.clean(pos[1])}`, 2);
-  const a = hits[0], root = path.join(F.HOME, '.claude', 'projects');
-  const dst = path.join(root, a.dirName, `${a.id}.jsonl`);
+  const a = hits[0];
+  const dst = a.codex
+    ? path.join(F.codexHome(), a.dirName.startsWith('codex/archived') ? 'archived_sessions' : 'sessions', a.dirName.replace(/^codex(\/archived)?\/?/, ''), path.basename(a.file))
+    : path.join(F.HOME, '.claude', 'projects', a.dirName, `${a.id}.jsonl`);
   if (fs.existsSync(dst)) { console.log(`${a.id.slice(0, 8)} is already in ${path.dirname(dst)}; nothing to restore.`); return; }
   copySession(a.file, dst);
-  console.log(`🐡 restored ${a.id} to ${path.dirname(dst)}\n   resume: claude --resume ${a.id}  (from the session's project directory)`);
+  console.log(`🐡 restored ${a.id} to ${path.dirname(dst)}\n   resume: ${a.codex ? `codex resume ${a.id}` : `claude --resume ${a.id}  (from the session's project directory)`}`);
   return;
 }
 
@@ -184,9 +185,10 @@ function row(s) {
   return {
     id: s.id, project: clean(st.cwd) || s.decoded, projectName: nameProject(clean(st.cwd), mm.project), file: s.file,
     mtime: s.mtime, size: s.size, status: ageMs < 60e3 ? 'active' : ageMs < 3600e3 ? 'recent' : 'idle',
-    title: clean(mm.name || st.customTitle || mm.label || st.aiTitle || st.slug || st.summary),
+    title: clean(mm.name || st.customTitle || s.title || mm.label || st.aiTitle || st.slug || st.summary),
     summary: clean(mm.summary || st.summary), messages: st.count, lastTs: st.last,
     name: mm.name || null, star: !!mm.star, archived: !!mm.archived, cost: Math.round(F.sessionCost(s) * 100) / 100,
+    harness: s.harness || 'claude', resume: s.harness === 'codex' ? `codex resume ${s.id}` : `claude --resume ${s.id}`,
   };
 }
 
@@ -230,6 +232,7 @@ const SELF = process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID
 let rows = all.filter(s => s.state && s.state.count).map(row);
 if (!has('--archived')) rows = rows.filter(r => !r.archived);
 if (has('--starred')) rows = rows.filter(r => r.star);
+if (flag('--tool', null)) rows = rows.filter(r => r.harness === flag('--tool', '').toLowerCase().replace('claude-code', 'claude'));
 if (has('--active')) rows = rows.filter(r => r.status !== 'idle');
 if (SEARCH) rows = rows.filter(r => `${r.title} ${r.summary} ${r.projectName}`.toLowerCase().includes(SEARCH.toLowerCase()));
 rows.sort((a, b) => b.mtime - a.mtime);
@@ -242,9 +245,9 @@ const usd = v => v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`;
 console.log(`🐡 fugu radar: ${rows.length} sessions${has('--active') ? ' (active/recent)' : ''}, newest ${top.length}:\n`);
 for (const s of top) {
   const me = s.id === SELF ? C('36', ' ◀ you') : '';
-  const star = s.star ? C('33', '★ ') : '';
-  console.log(`  ${DOT[s.status]} ${ago(s.mtime).padStart(4)}  ${s.projectName.padEnd(28).slice(0, 28)}  ${String(s.messages).padStart(4)}msg ${usd(s.cost).padStart(7)}  ${star}${s.title.slice(0, 56)}${me}`);
-  console.log(C('2', `         claude --resume ${s.id}`));
+  const star = (s.harness === 'codex' ? C('35', 'cx ') : '') + (s.star ? C('33', '★ ') : '');
+  console.log(`  ${DOT[s.status]} ${ago(s.mtime).padStart(4)}  ${s.projectName.padEnd(28).slice(0, 28)}  ${String(s.messages).padStart(4)}msg ${(s.harness === 'codex' && !s.cost ? '–' : usd(s.cost)).padStart(7)}  ${star}${s.title.slice(0, 56)}${me}`);
+  console.log(C('2', `         ${s.resume}`));
 }
-console.log(C('2', '\n  ● <1m  ○ <1h  · idle   ★ starred   $ ≈ API list price   fork: claude --resume <id> --fork-session'));
+console.log(C('2', '\n  ● <1m  ○ <1h  · idle   ★ starred   cx Codex   $ ≈ API list price (Codex: unpriced unless ~/.fugu/prices.json)   fork: claude --resume <id> --fork-session'));
 })();
