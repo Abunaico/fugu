@@ -36,7 +36,7 @@ h1{font-size:20px; margin:0 0 6px; padding:8px 12px; background:var(--head); col
   border:3px solid var(--line); box-shadow:5px 5px 0 var(--shadow); display:inline-block}
 h1 em{font-style:normal; color:var(--head-ink)}
 h2{font-size:13px; margin:22px 0 6px; display:flex; align-items:center; gap:8px}
-h2::before{content:""; width:10px; height:10px; background:var(--accent); box-shadow:2px 2px 0 var(--shadow); flex:none}
+h2::before{content:"🐡"; font-size:14px; line-height:1; flex:none}
 .sub,.note,small{color:var(--dim)}
 .note{font-size:12px; margin:4px 0}
 .stats{display:flex; flex-wrap:wrap; gap:10px; margin:14px 0}
@@ -64,6 +64,7 @@ tr:hover td{background:var(--hover)}
 .prac li:last-child,.insights li:last-child{border-bottom:0}
 .prac small,.insights small{font-size:12px}
 .prac li.warn b::before{content:"▲ "; color:var(--warn)} .prac li.ok b::before{content:"✓ "; color:var(--good)}
+.rules{margin-bottom:22px} .rules b::before{content:"› "; color:var(--accent)}
 .insights{counter-reset:ins}
 .insights li{counter-increment:ins; grid-template-columns:auto 1fr auto; column-gap:10px; align-items:baseline}
 .insights li::before{content:counter(ins); font:800 13px var(--pixel); color:var(--panel); background:var(--accent);
@@ -105,3 +106,44 @@ h1 .puff,h1:hover .flat{opacity:0} h1:hover .puff{opacity:1}
 .tfilter input:focus{outline:none; box-shadow:3px 3px 0 var(--accent)}
 .tfilter span{font:700 11px var(--pixel); color:var(--dim); text-transform:uppercase}
 tr[hidden]{display:none}
+/* back to top: a small ANSI FUGU swims along the bottom as you scroll (the script moves him),
+   puffs up when clicked, and swims you back up. The art faces left; .right mirrors it. */
+.totop{position:fixed; left:0; bottom:16px; z-index:15; width:34px; height:32px; padding:0; border:0; background:none; cursor:pointer;
+  filter:drop-shadow(2px 2px 0 var(--shadow)); opacity:0; visibility:hidden; transition:opacity .25s, visibility .25s, translate .15s}
+.totop.show{opacity:1; visibility:visible}
+.totop:hover{translate:0 -3px}
+/* He's a body plus four layers cut from one strip of held cels: face, side fin, top fin, tail.
+   The script picks each layer's cel by index (--face, --pec, --fin, --tail). */
+.totop i{display:block; width:100%; height:100%; image-rendering:pixelated; background-repeat:no-repeat;
+  background-image:var(--cels), var(--cels), var(--cels), var(--cels), var(--fugu-body);
+  background-size:var(--strip) auto, var(--strip) auto, var(--strip) auto, var(--strip) auto, 34px auto;
+  background-position:calc(var(--face, 0) * -34px) 100%, calc(var(--pec, 0) * -34px) 100%,
+    calc(var(--fin, 6) * -34px) 100%, calc(var(--tail, 3) * -34px) 100%, 50% 100%}
+.totop.right i{transform:scaleX(-1)}
+/* the body rocks against the tail beat (--rot, set per kick); at rest he bobs, stepped like cels */
+.totop i{rotate:var(--rot, 0deg); transition:rotate .08s steps(2)}
+.totop span{display:block; height:100%; animation:bob 2.6s steps(2) infinite}
+@keyframes bob{50%{translate:0 -2px}}
+.totop.moving span{animation:none}
+/* puffed: his own 3-cel strip (rest, paddle up, paddle down); the script cycles --pf while he floats */
+.totop.puffed i{background:var(--puff-cels) no-repeat calc(var(--pf, 0) * -34px) 100%/102px auto}
+/* the startle gag animates the span (squash and stretch, roll, lift) with the Web Animations API,
+   so it never touches his facing (<i>) or his position (.totop) */
+.totop.gag span{animation:none} .totop.gag i{transition:none}
+/* bubbles: their own elements, released where he is. Most wobble up a little way and pop into a
+   sparkle; a few (the big ones) keep going, speeding up, growing and drifting with the current until
+   they leave through the top. The script sets each one's fate. */
+.bubble{position:fixed; z-index:14; width:var(--s); height:var(--s); border:2px solid rgba(11,35,80,.5); border-radius:50%;
+  background:rgba(255,255,255,.4); box-shadow:inset -2px -2px 0 rgba(125,190,245,.6), inset 2px 2px 0 #fff; pointer-events:none;
+  animation:rise var(--t) cubic-bezier(.4,0,.75,.75) var(--d) both, sway var(--sw) ease-in-out var(--d) infinite alternate,
+    wobble var(--wb) ease-in-out var(--d) infinite alternate, grow var(--t) ease-in var(--d) both}
+.bubble.pop{animation:pop .22s ease-out both}
+@keyframes rise{0%{opacity:0; translate:0 0} 8%{opacity:1} 90%{opacity:1} 100%{opacity:var(--end, 0); translate:var(--dx) calc(-1 * var(--rise))}}
+@keyframes sway{from{transform:translateX(calc(-1 * var(--w)))} to{transform:translateX(var(--w))}}
+@keyframes wobble{from{scale:1.12 .9} to{scale:.9 1.12}}
+@keyframes grow{to{width:calc(var(--s) * var(--g)); height:calc(var(--s) * var(--g))}}
+@keyframes pop{to{opacity:0; scale:.2; box-shadow:0 -10px 0 -2px rgba(11,35,80,.6), 0 10px 0 -2px rgba(11,35,80,.6), -10px 0 0 -2px rgba(11,35,80,.6), 10px 0 0 -2px rgba(11,35,80,.6)}}
+@media (prefers-reduced-motion:reduce){.totop span,.totop i,.bubble{animation:none; transition:none} .bubble{display:none}}
+.totop:focus-visible{outline:3px solid var(--accent); outline-offset:3px}
+@media print{.totop{display:none}}
+

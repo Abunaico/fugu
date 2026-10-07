@@ -670,6 +670,51 @@ chk "marketplace refreshed, each scope updated" "$(cut -d' ' -f2- "$TU/calls" | 
 chk "project scope runs in its project" "$(grep -c "/proj plugin update fugu@fugu-tools --scope project" "$TU/calls")" "1"
 rm -rf "$TU"
 
+echo "— report customizations —"
+TR=$(mktemp -d); RP="$TR/.claude/projects/-r"; mkdir -p "$RP" "$TR/.fugu" "$TR/w/abunai" "$TR/w/scratch"
+rs() { printf '{"type":"user","timestamp":"%sT01:00:00Z","cwd":"%s","message":{"content":"a prompt long enough to clear the two hundred byte size gate of the radar scanner, padded with words"}}\n' "$D" "$2" > "$RP/$1.jsonl"
+  [ -n "${3:-}" ] && printf '{"type":"custom-title","customTitle":"%s"}\n' "$3" >> "$RP/$1.jsonl"; asst r$1 01:00:01Z claude-haiku-4-5 1000000 0 0 0 0 >> "$RP/$1.jsonl"; }
+rs dddddddd-0000-0000-0000-000000000001 "$TR/w/abunai" "ABUNAI-SITE"
+rs dddddddd-0000-0000-0000-000000000002 "$TR/w/scratch"
+# Stub Haiku: logs each call, answers with valid edits plus junk that must be dropped.
+printf '#!/bin/sh\ncat > /dev/null; echo call >> "%s/calls"\nprintf %%s '"'"'{"result":"{\\"project_aliases\\":{\\"abunai\\":\\"Abunaico\\",\\"nope\\":\\"X\\"},\\"tag_aliases\\":{\\"ABUNAI\\":\\"ABUNAICO\\"},\\"hide_projects\\":[\\"scratch\\",\\"ghost\\"],\\"evil\\":{\\"a\\":\\"b\\"}}","total_cost_usd":0.001}'"'"'\n' "$TR" > "$TR/stub"; chmod +x "$TR/stub"
+rb() { HOME=$TR FUGU_CLAUDE=$TR/stub node bin/fugu-burn "$@"; }
+rb --json >/dev/null; chk "empty prompt makes no Haiku call" "$([ -f "$TR/calls" ] && echo called || echo none)" "none"
+grep -q 'This file ships empty' "$TR/.fugu/report-prompt.md" && ok "prompt file ships empty with instructions" || bad "prompt file ships empty with instructions"
+rb --add-rule "abunai is abunaico; hide scratch" --json >/dev/null
+chk "rules need Haiku on" "$(rb --rules | grep -c 'status: haiku-off')" "1"
+HOME=$TR node bin/fugu-config set model.haiku on >/dev/null
+RJ=$(rb --json)
+chk "compiled rules applied to projects" "$(echo "$RJ" | jq -r '.A.projects | keys | join(",")')" "Abunaico"
+chk "tag alias applied" "$(echo "$RJ" | jq -r '.A.tags | keys | join(",")')" "ABUNAICO"
+chk "unknown names and keys dropped" "$(jq -c '.rules | [keys, (.project_aliases|keys), .hide_projects]' "$TR/.fugu/report-rules.json")" '[["hide_projects","project_aliases","tag_aliases"],["abunai"],["scratch"]]'
+rb --json >/dev/null; chk "cached until the rules change" "$(wc -l < "$TR/calls" | tr -d ' ')" "1"
+rb --recompile --json >/dev/null; chk "--recompile forces a call" "$(wc -l < "$TR/calls" | tr -d ' ')" "2"
+rb | grep -q 'customized: 3 edits' && ok "report says it was customized" || bad "report says it was customized"
+rb --html "$TR/r.html" >/dev/null
+grep -q '<h2>Report rules <small>customized: 3 edits from ~/.fugu/report-prompt.md</small></h2>' "$TR/r.html" && ok "rules box with status in the header" || bad "rules box with status in the header"
+grep -q '<li><b>abunai is abunaico; hide scratch</b></li>' "$TR/r.html" && ok "rules box lists the rules" || bad "rules box lists the rules"
+grep -q 'ships empty' "$TR/r.html" && bad "rules box hides the template comment" || ok "rules box hides the template comment"
+rm -rf "$TR"
+
+echo "— help —"
+hp=$(node bin/fugu-help --plain)
+case "$hp" in *$'\x1b'*) bad "plain help has no escape codes";; *) ok "plain help has no escape codes";; esac
+echo "$hp" | grep -q "FUGU v$(jq -r .version .claude-plugin/plugin.json)" && ok "help shows the manifest version" || bad "help shows the manifest version"
+echo "$hp" | grep -q 'fugu-burn --add-rule' && ok "help explains report customizations" || bad "help explains report customizations"
+chk "color help draws the fish" "$(node bin/fugu-help --color | grep -c '▀')" "9"
+chk "plain help starts with the one-color fish" "$(node bin/fugu-help --plain | head -13 | grep -c '█')" "11"
+grep -q -- '--fugu-body:url(data:image/png;base64,' "$TB/r.html" && grep -q -- '--cels:url(data:image/png;base64,' "$TB/r.html" && grep -q -- '--strip:714px' "$TB/r.html" && ok "pixel fish and cel strip embedded" || bad "pixel fish and cel strip embedded"
+grep -q 'data-mood' "$TB/r.html" && bad "fish ignores the report's results" || ok "fish ignores the report's results"
+grep -q 'class="totop"' "$TB/r.html" && grep -q -- '--puff-cels:url(data:image/png;base64,' "$TB/r.html" && grep -q "body.animate(" "$TB/r.html" && ok "fish back-to-top button puffs" || bad "fish back-to-top button puffs"
+TD=$(mktemp -d); burn --html "$TD" >/dev/null; ls "$TD" | grep -qE '^fugu-burn-all-accounts-[0-9-]+(_[0-9-]+)?\.html$' && ok "html into a folder is named for all accounts" || bad "html into a folder is named for all accounts"
+burn --account "Acme Corp" --html "$TD" >/dev/null; ls "$TD" | grep -qE '^fugu-burn-acme-corp-[0-9-]+(_[0-9-]+)?\.html$' && ok "one account names the file" || bad "one account names the file"
+rm -rf "$TD"
+chk "--puff draws the puffed fish" "$(node bin/fugu-help --color --puff | grep -c .▀.)" "15"
+chk "NO_COLOR skips the art" "$(NO_COLOR=1 node bin/fugu-help --color | grep -c '▀')" "0"
+chk "Claude Code ! commands get the fish" "$(CLAUDECODE=1 COLORTERM=truecolor node bin/fugu-help | grep -c '▀')" "9"
+chk "piped output elsewhere stays plain" "$(env -u CLAUDECODE -u FORCE_COLOR COLORTERM= node bin/fugu-help | grep -c '▀')" "0"
+
 echo "— projects: nesting —"
 TN=$(mktemp -d); NP="$TN/.claude/projects/-n"; mkdir -p "$NP" "$TN/work/app/.git" "$TN/work/docs"
 nest() { printf '{"type":"user","timestamp":"%sT01:00:00Z","cwd":"%s","message":{"content":"a prompt long enough to clear the two hundred byte size gate of the radar scanner, padded out with more words"}}\n' "$D" "$2" > "$NP/$1.jsonl"; asst n$1 01:00:01Z claude-haiku-4-5 10 0 0 0 0 >> "$NP/$1.jsonl"; }

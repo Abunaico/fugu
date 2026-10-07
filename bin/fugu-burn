@@ -5,6 +5,7 @@
 // Usage: fugu-burn [--days N | --since YYYY-MM-DD [--until YYYY-MM-DD]]
 //                  [--project <substr>] [--account <substr>] [--since-change YYYY-MM-DD]
 //                  [--git | --full] [--json] [--html [file]] [--reindex]
+//        fugu-burn --add-rule "<plain-English customization>" | --rules | --recompile
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -26,17 +27,52 @@ if (!isDay(until) || (since && !isDay(since))) die('dates are YYYY-MM-DD');
 if (!since) { const n = parseInt(flag('--days', '30'), 10); since = shift(until, -((Number.isFinite(n) && n > 0 ? n : 30) - 1)); }
 const PROJ = flag('--project', null);
 
+if (has('--add-rule')) {
+  const line = flag('--add-rule', '');
+  if (!line.trim()) die('usage: fugu-burn --add-rule "<plain-English customization>"');
+  F.addReportRule(line);
+  console.log(`🐡 added to ${F.FILES.reportPrompt}: ${F.clean(line).trim()}`);
+}
+
 let all;
 try { all = F.scan({ reindex: has('--reindex') }); } catch (e) { die(e.message); }
-const meta = F.loadMeta(), pmap = F.loadProjects();
-const nameProject = F.projectNamer(all.map(s => F.clean(s.state.cwd)), pmap);
+const meta = F.loadMeta();
+const cwds = all.map(s => F.clean(s.state.cwd));
+const tagOf = s => {
+  const renamed = F.clean((meta[s.id] || {}).name || s.state.customTitle);
+  return renamed ? ((/^([A-Za-z][A-Za-z0-9]*)[-_:\s]/.exec(renamed) || [])[1] || renamed).toUpperCase().slice(0, 16) : '(not renamed)';
+};
+// Report customizations: compile the plain-English rules against today's names
+// (as they look without customization), then build the namer with them applied.
+const ACC = F.accounts();
+const baseAcct = org => org === 'codex' ? 'Codex (ChatGPT login)' : F.accountLabel(ACC.byOrg[org] || (org ? { email: `org ${org.slice(0, 8)}`, plan: '?', orgName: '' } : null));
+const custom = (() => {
+  const base = F.projectNamer(cwds, F.loadProjects(false));
+  const uniq = a => [...new Set(a)].sort();
+  const names = {
+    projects: uniq(all.map(s => base(F.clean(s.state.cwd), (meta[s.id] || {}).project))),
+    tags: uniq(all.map(tagOf)),
+    accounts: uniq([...Object.keys(ACC.byOrg).map(baseAcct), baseAcct('codex'), baseAcct('')]),
+  };
+  return F.compileReportRules(names, { force: has('--recompile') });
+})();
+const RULES = custom.rules || {};
+const hidden = new Set((RULES.hide_projects || []).map(n => n.toLowerCase()));
+const pmap = F.loadProjects();
+const nameProject = F.projectNamer(cwds, pmap);
 const projOf = s => nameProject(F.clean(s.state.cwd), (meta[s.id] || {}).project);
+if (has('--rules')) {
+  console.log(`🐡 report customizations: ${F.FILES.reportPrompt}\n`);
+  console.log(F.reportPromptText() || '  (empty: add one with fugu-burn --add-rule "...")');
+  console.log(`\n  status: ${custom.status}${custom.usd ? ` · Haiku $${custom.usd.toFixed(4)}` : ''}`);
+  console.log(JSON.stringify(RULES, null, 2).split('\n').map(l => `  ${l}`).join('\n'));
+  process.exit(0);
+}
 // Account per request comes from Claude Code's credential_org record. Subagents and
 // older transcripts without it fall back to the parent's account, then to a profile's
 // last-session record, else unknown.
-const ACC = F.accounts();
 const orgFor = (org, s) => org || s.state.org || ACC.bySession[s.id] || '';
-const acctName = org => org === 'codex' ? 'Codex (ChatGPT login)' : F.accountLabel(ACC.byOrg[org] || (org ? { email: `org ${org.slice(0, 8)}`, plan: '?', orgName: '' } : null));
+const acctName = org => { const n = baseAcct(org); return (RULES.account_labels || {})[n] || n; };
 const mainAcct = new Map();
 function sessionAccount(s) {
   if (mainAcct.has(s.id)) return mainAcct.get(s.id);
@@ -48,7 +84,7 @@ function sessionAccount(s) {
   return name;
 }
 const ACCT = flag('--account', null);
-const sessions = all.filter(s => (!PROJ || projOf(s).toLowerCase().includes(PROJ.toLowerCase()))
+const sessions = all.filter(s => !hidden.has(projOf(s).toLowerCase()) && (!PROJ || projOf(s).toLowerCase().includes(PROJ.toLowerCase()))
   && (!ACCT || ACCT.toLowerCase().split(/\s+/).filter(Boolean).every(w => sessionAccount(s).toLowerCase().includes(w))));
 const fam = m => (/fable|mythos/.test(m) ? 'fable' : /opus/.test(m) ? 'opus' : /sonnet/.test(m) ? 'sonnet' : /haiku/.test(m) ? 'haiku' : 'other');
 
@@ -142,7 +178,7 @@ function aggregate(from, to) {
     } });
     // /rename titles are the user's own labels; their leading token (IRT-, ACO-) is a workstream tag.
     const mm = meta[s.id] || {}, renamed = F.clean(mm.name || s.state.customTitle);
-    const tag = renamed ? ((/^([A-Za-z][A-Za-z0-9]*)[-_:\s]/.exec(renamed) || [])[1] || renamed).toUpperCase().slice(0, 16) : '(not renamed)';
+    const tag0 = tagOf(s), tag = (RULES.tag_aliases || {})[tag0] || tag0;
     A.list.push({ id: s.id, title: renamed || F.clean(s.title || mm.label || s.state.aiTitle || s.state.summary).slice(0, 60), renamed: !!renamed, tag,
       project: name, account: sessionAccount(s), harness: s.harness, usd: sUsd, reqs: sReqs, days: sDays.size, md: sMd, wk: sWk, ag: sAg,
       first: [...sDays].sort()[0], last: [...sDays].sort().pop() });
@@ -249,6 +285,11 @@ function rates(A) {
   ];
 }
 
+const nRules = Object.values(RULES).reduce((a, v) => a + (Array.isArray(v) ? v.length : Object.keys(v).length), 0);
+const CUSTOM_NOTE = custom.status === 'empty' ? ''
+  : custom.status === 'haiku-off' ? `customizations in ${F.FILES.reportPrompt} need Haiku: fugu-config set model.haiku on`
+  : custom.status === 'failed' ? `couldn't compile ${F.FILES.reportPrompt}; using the last good version (${nRules} edits)`
+  : `customized: ${nRules} edit${nRules === 1 ? '' : 's'} from ${F.FILES.reportPrompt}${custom.status === 'compiled' ? ` (compiled now by Haiku${custom.usd ? `, $${custom.usd.toFixed(4)}` : ''})` : ''}`;
 const k = n => n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n));
 const usd = v => v == null ? '–' : v >= 1000 ? `$${Math.round(v).toLocaleString('en-US')}` : v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`;
 const pct = x => `${Math.round(x * 100)}%`;
@@ -303,8 +344,6 @@ function insights(A) {
 
 // --- what fugu itself costs ---
 function fuguCost(A) {
-  const build = Object.entries(A.projects).filter(([n]) => /(^|\/)fugu$/i.test(n))
-    .reduce((a, [, p]) => ({ usd: a.usd + p.usd, sessions: a.sessions + p.sessions }), { usd: 0, sessions: 0 });
   const haiku = (F.readJson(F.FILES.spend, {}) || {}).haiku || { usd: 0, calls: 0 };
   // Skill descriptions are listed in every request's context; the banner line once per session.
   let chars = 160;
@@ -316,7 +355,7 @@ function fuguCost(A) {
     chars += `- fugu:${d}: ${(/^description:\s*(.*)$/m.exec(t) || [])[1] || ''}`.length;
   }
   const skillTok = Math.ceil(chars / 4), perTok = A.tokens[1] ? A.drv.read / A.tokens[1] : 0;
-  return { build, haiku, skillTok, skillsUsd: skillTok * A.mainReqs * perTok };
+  return { haiku, skillTok, skillsUsd: skillTok * A.mainReqs * perTok };
 }
 
 const per = (v, n) => n ? v / n : null;
@@ -333,7 +372,13 @@ if (CHANGE) {
 if (has('--json')) {
   console.log(JSON.stringify(report, (key, v) => (typeof v === 'function' ? undefined : v), 2));
 } else if (has('--html')) {
-  const file = flag('--html', null) || `fugu-burn-${today}.html`;
+  // The name says whose spend and when: one account's slug, or all-accounts.
+  const slug = v => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const span_ = report.mode === 'compare' ? [report.before.A.from, report.after.A.to] : [report.A.from, report.A.to];
+  const name = ['fugu-burn', ACCT ? slug(ACCT) : 'all-accounts', PROJ && slug(PROJ), span_[0] === span_[1] ? span_[0] : `${span_[0]}_${span_[1]}`]
+    .filter(Boolean).join('-') + '.html';
+  let file = flag('--html', null) || name;
+  try { if (fs.statSync(file).isDirectory()) file = path.join(file, name); } catch {}
   fs.writeFileSync(file, html(report));
   console.log(`🐡 wrote ${path.resolve(file)}`);
 } else console.log(text(report));
@@ -368,6 +413,7 @@ function text(R) {
     period(R.after);
   } else {
     o.push(`🐡 fugu burn: ${R.A.from} → ${R.A.to}${filt} · ${R.A.sessions} sessions · ${bold(usd(R.A.usd))} ${dim('≈ API list price')}`);
+    if (CUSTOM_NOTE) o.push(dim(`   ${CUSTOM_NOTE}`));
     o.push('');
     period(R);
   }
@@ -461,10 +507,24 @@ function text(R) {
     o.push('');
     o.push(bold('WHAT FUGU COSTS'));
     o.push(`  ${dim('this report')} $0 ${dim('(local code, no model calls) · run inside a session via /fugu:burn it adds ≈')}${k(o.join('\n').length / 4)} ${dim('tokens to that session')}`);
-    o.push(`  ${dim('skill listings + banner')} ≈${k(FC.skillTok)} ${dim('tokens on every request ≈')} ${usd(FC.skillsUsd)} ${dim('this period')} · ${dim('Haiku labels')} ${usd(FC.haiku.usd)} ${dim(`(${FC.haiku.calls} calls)`)} · ${dim('building fugu')} ${usd(FC.build.usd)} ${dim(`(${FC.build.sessions} session${FC.build.sessions === 1 ? '' : 's'})`)}`);
+    o.push(`  ${dim('skill listings + banner')} ≈${k(FC.skillTok)} ${dim('tokens on every request ≈')} ${usd(FC.skillsUsd)} ${dim('this period')} · ${dim('Haiku labels')} ${usd(FC.haiku.usd)} ${dim(`(${FC.haiku.calls} calls)`)}`);
     if (A.unpriced.length) o.push(dim(`  unpriced models (tokens counted, $ not): ${A.unpriced.join(', ')}`));
     o.push(dim('  Compare a habit change: fugu-burn --since-change YYYY-MM-DD   Share it: fugu-burn --html'));
   }
+}
+
+// The plain-English rules (comments stripped) and the edits Haiku made from them,
+// with the status on the right of the header like Insights.
+function rulesBox(e) {
+  if (!CUSTOM_NOTE) return '';
+  const lines = F.reportPromptText().split('\n').map(l => l.trim()).filter(Boolean);
+  const edits = [
+    ...Object.entries(RULES.project_aliases || {}).map(([a, b]) => `project ${a} → ${b}`),
+    ...Object.entries(RULES.tag_aliases || {}).map(([a, b]) => `tag ${a} → ${b}`),
+    ...Object.entries(RULES.account_labels || {}).map(([a, b]) => `account ${a} → ${b}`),
+    ...(RULES.hide_projects || []).map(p => `hide project ${p}`),
+  ];
+  return `<h2>Report rules <small>${e(CUSTOM_NOTE.replace(F.HOME, '~'))}</small></h2><ul class="prac rules">${lines.map(l => `<li><b>${e(l)}</b></li>`).join('')}${edits.length ? `<li><small>${edits.map(e).join(' · ')}</small></li>` : ''}</ul>`;
 }
 
 function html(R) {
@@ -543,7 +603,6 @@ ${gsum ? '<p class="note">git counts every non-merge commit in repos your sessio
 <dt>This report</dt><dd>$0: local code, no model calls. Run inside a session via /fugu:burn, its text adds ≈3k tokens to that session.</dd>
 <dt>Skill listings + banner</dt><dd>≈${e(k(FC.skillTok))} tokens on every request ≈ ${e(usd(FC.skillsUsd))} this period</dd>
 <dt>Haiku labels</dt><dd>${e(usd(FC.haiku.usd))} (${FC.haiku.calls} call${FC.haiku.calls === 1 ? '' : 's'}, opt-in)</dd>
-<dt>Building fugu</dt><dd>${e(usd(FC.build.usd))} (${FC.build.sessions} session${FC.build.sessions === 1 ? '' : 's'} in this period)</dd>
 </dl></footer>`;
   }
 
@@ -551,7 +610,7 @@ ${gsum ? '<p class="note">git counts every non-merge commit in repos your sessio
   if (R.mode === 'compare') {
     const b = R.before.A, a = R.after.A;
     title = `before / after ${R.change}`;
-    body = `<p class="sub">Before ${e(b.from)} to ${e(b.to)}: ${b.sessions} sessions, ${e(usd(b.usd))}. After ${e(a.from)} to ${e(a.to)}: ${a.sessions} sessions, ${e(usd(a.usd))}.${filt ? ` Filtered: ${e(filt)}.` : ''}</p>
+    body = `<p class="sub">Before ${e(b.from)} to ${e(b.to)}: ${b.sessions} sessions, ${e(usd(b.usd))}. After ${e(a.from)} to ${e(a.to)}: ${a.sessions} sessions, ${e(usd(a.usd))}.${filt ? ` Filtered: ${e(filt)}.` : ''}</p>${rulesBox(e)}
 ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = change(r), d = r.before ? (r.after - r.before) / r.before : null;
   return row([e(r.label), [e(r.before == null ? '–' : r.fmt(r.before)), r.before], [e(r.after == null ? '–' : r.fmt(r.after)), r.after], [`<span class="${c.good == null ? '' : c.good ? 'good' : 'bad'}">${e(c.s)}</span>`, d]]); }))}
 <p class="note">Rates are per day or per unit, so periods of different length compare fairly. Value per token stays a judgment call: pair this with the Smart Report's outcome questions.</p>
@@ -559,7 +618,7 @@ ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = cha
 <section class="panel" id="after">${period(R.after)}</section><section class="panel" id="before" hidden>${period(R.before)}</section>`;
   } else {
     title = `${R.A.from} → ${R.A.to}`;
-    body = (filt ? `<p class="sub">Filtered: ${e(filt)}</p>` : '') + period(R);
+    body = (filt ? `<p class="sub">Filtered: ${e(filt)}</p>` : '') + rulesBox(e) + period(R);
   }
   let css = '';
   try { css = fs.readFileSync(path.join(F.FUGU_ROOT, 'lib', 'report.css'), 'utf8'); } catch {}
@@ -570,6 +629,9 @@ ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = cha
     const uri = f => `data:image/png;base64,${fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', f)).toString('base64')}`;
     const flat = uri('fugu-flat.png'), puff = uri('fugu-puff.png');
     icon = `<link rel="icon" href="${flat}">`;
+    // The terminal's ANSI fish as tiny pixel PNGs: body, puffed, and a strip of 34px cels.
+    const strip = fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', 'fugu-cels.png'));
+    css += `\n:root{--fugu-body:url(${uri('fugu-body.png')}); --puff-cels:url(${uri('fugu-puff-cels.png')}); --cels:url(${uri('fugu-cels.png')}); --strip:${strip.readUInt32BE(16)}px}\n`;
     fish = `<span class="fishes" aria-hidden="true"><img class="flat" src="${flat}" alt=""><img class="puff" src="${puff}" alt=""></span>`;
   } catch {}
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -578,6 +640,7 @@ ${css}</style></head><body>
 <h1>${fish || '🐡 '}FUGU <em>[ ${e(title)} ]</em></h1>
 <p class="tagline">Fu the Bloat. Cool the Burn.</p>${body}
 <p class="note">Generated ${e(new Date().toISOString().slice(0, 16).replace('T', ' '))} from local Claude Code transcripts. Costs are estimates at Anthropic API list prices. Click a column to sort; type in a filter box to narrow a long table. Indented rows stay with their group.</p>
+<button class="totop" type="button" aria-label="Back to top" title="Back to top"><span><i></i></span></button>
 <script>
 function sortable(t) {
   const hs = [...t.tHead.rows[0].cells], tb = t.tBodies[0];
@@ -696,6 +759,168 @@ document.addEventListener('keydown', ev => { const r = ev.target.closest && ev.t
 for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => {
   for (const x of document.querySelectorAll('.tabs button')) { x.setAttribute('aria-selected', x === b); document.getElementById(x.dataset.p).hidden = x !== b; }
 };
+// Back to top: FUGU swims along the bottom, left near the top of the page, right at the end;
+// at the very top he swims off the left edge and comes back in from there.
+// He moves in strokes (kick, glide, drift back a little) and turns to face the way he swims.
+// Every pose is a held cel from assets/fugu-cels.png, never a tween: the tail sweeps through
+// five poses on each kick and follows through to a random one; the top fin lays back with
+// speed; the side fin flutters; he blinks (half, closed, half) and pulls faces every 1 to 3
+// seconds, resting or swimming.
+// Swimming fast leaves spurts of bubbles; the body rocks against each tail beat.
+// Click him and he startles. The gag is staged like a cartoon cut: a freeze, an inhale (the
+// anticipation), a one-frame pop that overshoots tall then wide, a buoyant float where he rises,
+// rolls past his tipping point onto his back and rocks there paddling with bubbles trickling up,
+// then the air jet of the deflate spins him upright with a wince, a stretch, a relief blink, a
+// then he swims for it still puffed, deflating at half speed as he goes (the air jet spins him
+// upright), with a relief blink once he's flat. The page starts gliding up on the click, easing in.
+const fish = document.querySelector('.totop');
+if (fish) {
+  const CEL = { kick: [2, 1, 2, 3, 4, 5, 4], fin: [6, 7, 8], flick: 9, pec: [0, 10, 0, 11], half: 12, blink: 13,
+    faces: { happy: 14, sad: 15, wink: 16, surprised: 17, sleepy: 18, determined: 19, silly: 20 } };
+  const RESTING = ['happy', 'sad', 'wink', 'surprised', 'sleepy', 'determined', 'silly'];
+  const SWIMMING = ['determined', 'determined', 'happy', 'surprised', 'silly', 'wink'];
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let x = -80, v = 0, ph = 0, turned = 1, moving = false, scared = false, startled = false, kicking = false;
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const cel = (k, n) => fish.style.setProperty('--' + k, n);
+  const goal = () => {
+    if (scrollY <= 200) return -120; // near the top he leaves off the left edge
+    const room = document.documentElement.scrollHeight - innerHeight;
+    return 16 + (room > 0 ? Math.min(1, scrollY / room) : 0) * (innerWidth - 96);
+  };
+  const ROCK = { 1: -6, 2: -3, 3: 0, 4: 3, 5: 6 }; // body counter-rotation per tail pose
+  const beat = t => { cel('tail', t); fish.style.setProperty('--rot', (ROCK[t] * turned) + 'deg'); };
+  let lastSpurt = 0;
+  const spurt = () => { // a few small bubbles shed behind him when he's going fast
+    const now = performance.now(); if (now - lastSpurt < 150) return; lastSpurt = now;
+    const r = fish.getBoundingClientRect(), tail = turned > 0 ? r.left + 6 : r.right - 10;
+    bubbles(2 + Math.floor(Math.random() * 2), tail, r.top + 22, 4, 7, 0.7);
+  };
+  const draw = () => { fish.style.transform = 'translateX(' + x.toFixed(1) + 'px)'; fish.classList.toggle('right', turned > 0); fish.classList.toggle('show', x > -40); };
+  const calm = () => { scared = startled = false; face = 0; cel('face', 0); go(); };
+  const swim = () => {
+    if (scared && x <= -90) { moving = kicking = false; v = 0; fish.classList.remove('moving'); fish.style.setProperty('--rot', '0deg'); calm(); return; }
+    if (scared) {
+      // Fleeing: full-strength kicks all the way off the left edge, quicker strokes, little drift back.
+      turned = -1; ph = (ph + 1 / 12) % 1;
+      if (ph < 0.3) { v -= fish.classList.contains('puffed') ? 4.5 : 7; beat(CEL.kick[Math.floor(ph / 0.3 * 7)]); kicking = true; }
+      else { if (kicking) { kicking = false; beat(1 + Math.floor(Math.random() * 5)); } if (ph > 0.75) v += 0.84; }
+      cel('fin', CEL.fin[Math.abs(v) > 7 ? 2 : 1]);
+      v *= 0.88; x += v; draw(); if (Math.abs(v) > 8) spurt();
+      return requestAnimationFrame(swim);
+    }
+    const d = goal() - x, dir = Math.sign(d);
+    if (Math.abs(d) < 1 && Math.abs(v) < 0.3) { x += d; v = 0; ph = 0; moving = kicking = false; cel('fin', 6); fish.style.setProperty('--rot', '0deg'); fish.classList.remove('moving'); draw(); return; }
+    if (Math.abs(d) < 14) { v += d * 0.06; ph = 0; }
+    else {
+      turned = dir;
+      ph = (ph + 1 / 30) % 1;
+      const s = Math.min(1.8, Math.abs(d) / 120) + 0.15;
+      if (ph < 0.3) { v += dir * 2.4 * s; beat(CEL.kick[Math.floor(ph / 0.3 * 7)]); kicking = true; }
+      else {
+        if (kicking) { kicking = false; beat(1 + Math.floor(Math.random() * 5)); } // follow-through: any pose
+        if (ph > 0.7) v -= dir * 0.5 * s;
+      }
+    }
+    cel('fin', CEL.fin[Math.abs(v) > 7 ? 2 : Math.abs(v) > 3 ? 1 : 0]); // the top fin lays back with speed
+    v *= 0.86; x += v; draw(); if (Math.abs(v) > 9) spurt();
+    requestAnimationFrame(swim);
+  };
+  const go = () => {
+    if (startled && !scared) return; // mid-gag he holds his spot while the page glides
+    if (still) { x = goal(); draw(); if (scared) setTimeout(calm, 600); return; }
+    if (!moving) { moving = true; fish.classList.add('moving'); requestAnimationFrame(swim); }
+  };
+  addEventListener('scroll', go, { passive: true }); addEventListener('resize', go); go();
+  // Keep-alive, ticking at about 11 fps like limited animation: side fin flutter, a blink every
+  // 2 to 6 seconds, a face every 5 to 20 seconds, and the odd top-fin twitch at rest.
+  let face = 0, faceEnd = 0, blink = [], tick = 0;
+  const t0 = performance.now(), later = (a, b) => performance.now() + (a + Math.random() * (b - a)) * 1000;
+  let nextBlink = t0 + 2000, nextFace = later(5, 20);
+  const alive = () => {
+    setTimeout(alive, 90);
+    if (startled || document.hidden || !fish.classList.contains('show')) return;
+    const now = performance.now(); tick++;
+    const every = moving ? 2 : 16; // the side fin fans slowly at rest, quicker while swimming
+    if (tick % every === 0) cel('pec', CEL.pec[(tick / every) % 4]);
+    if (blink.length) { cel('face', blink.shift()); return; }
+    if (face && now > faceEnd) { face = 0; blink = [CEL.half, 0]; return; } // ease out of a face through a half-blink
+    if (now > nextFace) {
+      nextFace = later(5, 20);
+      face = CEL.faces[pick(moving ? SWIMMING : RESTING)]; faceEnd = now + 1200 + Math.random() * 1300; blink = [CEL.half, face];
+    } else if (!face && now > nextBlink) {
+      nextBlink = later(2, 6);
+      blink = [CEL.half, CEL.blink, CEL.blink, CEL.half, 0];
+      if (!moving && Math.random() < 0.25) { cel('fin', CEL.flick); setTimeout(() => cel('fin', 6), 180); }
+    }
+  };
+  if (!still) setTimeout(alive, 600);
+  const bubbles = (n, cx, cy, lo, hi, t, ring) => {
+    for (let i = 0; i < n; i++) {
+      const a = i / n * 6.283, R = ring ? 20 + Math.random() * 10 : 0, sz = Math.round(lo + Math.random() * (hi - lo));
+      const top = cy + Math.sin(a) * R + (ring ? 0 : (Math.random() - 0.5) * 10);
+      const keeps = sz >= lo + (hi - lo) * 0.7 || Math.random() < 0.15; // the big ones carry on; the rest pop
+      const rise = keeps ? top + sz * 2 + 12 : 30 + Math.random() * 70, dur = keeps ? t * rise / (150 + sz * 14) : 0.45 + Math.random() * 0.6;
+      const b = document.createElement('span'); b.className = 'bubble';
+      b.style.cssText = 'left:' + (cx + Math.cos(a) * R + (ring ? 0 : (Math.random() - 0.5) * 14)).toFixed(0) + 'px;top:' + top.toFixed(0)
+        + 'px;--s:' + sz + 'px;--rise:' + rise.toFixed(0) + 'px;--dx:' + ((keeps ? (Math.random() - .3) * 70 : (Math.random() - .5) * 16)).toFixed(0) + 'px;--g:' + (keeps ? 1.8 : 1.15) + ';--end:' + (keeps ? 0 : 1)
+        + ';--w:' + (ring ? Math.cos(a) * 12 : (keeps ? 6 + Math.random() * 8 : 2 + Math.random() * 4) * (Math.random() < .5 ? -1 : 1)).toFixed(1)
+        + 'px;--t:' + dur.toFixed(2) + 's;--sw:' + (0.6 + Math.random() * 0.6).toFixed(2) + 's;--wb:' + (0.25 + Math.random() * 0.2).toFixed(2) + 's;--d:' + Math.round(ring ? Math.random() * 40 : i * 60 + Math.random() * 50) + 'ms';
+      b.addEventListener('animationend', e => {
+        if (e.animationName === 'pop' || (e.animationName === 'rise' && keeps)) return b.remove();
+        if (e.animationName !== 'rise') return;
+        const c = getComputedStyle(b); // freeze where it got to, then pop there
+        b.style.translate = c.translate; b.style.transform = c.transform; b.style.scale = c.scale; b.style.width = c.width; b.style.height = c.height;
+        b.classList.add('pop');
+      });
+      document.body.appendChild(b);
+    }
+  };
+  const body = fish.firstElementChild, box = () => fish.getBoundingClientRect();
+  // One pose: translate, roll, squash/stretch. Easing runs from this key to the next; offset is its time.
+  const K = (sx, sy, deg, y, dx, easing, offset) => ({ transform: 'translate(' + dx + 'px,' + y + 'px) rotate(' + deg + 'deg) scale(' + sx + ',' + sy + ')', easing, offset });
+  const play = (keys, ms, origin) => { body.style.transformOrigin = origin; return body.animate(keys, { duration: ms, fill: 'forwards' }).finished.catch(() => {}); };
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  // The page glides to the top on its own curve: slow to start, settling as it arrives. A wheel or touch cancels it.
+  let glideId = 0;
+  const glide = ms => {
+    const from = scrollY, t0 = performance.now(); cancelAnimationFrame(glideId);
+    const step = now => { const p = Math.min(1, (now - t0) / ms), e = p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; scrollTo(0, from * (1 - e)); if (p < 1) glideId = requestAnimationFrame(step); };
+    glideId = requestAnimationFrame(step);
+  };
+  for (const ev of ['wheel', 'touchstart']) addEventListener(ev, () => cancelAnimationFrame(glideId), { passive: true });
+  const HOLD = 'steps(1, end)', SNAP = 'cubic-bezier(.2,.9,.3,1)', SOFT = 'ease-in-out', TEETER = 'cubic-bezier(.65,0,.35,1)';
+  fish.onclick = async () => {
+    if (startled) return;
+    startled = true; blink = []; face = 0; cel('face', 0); cel('pec', 0); cel('fin', 6);
+    if (still) { fish.classList.add('puffed'); await wait(400); fish.classList.remove('puffed'); scared = true; scrollTo({ top: 0 }); go(); return; }
+    fish.classList.add('gag'); fish.style.setProperty('--rot', '0deg'); glide(5200);
+    // Anticipation: he freezes wide-eyed, then sucks in a breath (squash, the opposite of the pop).
+    cel('face', CEL.faces.surprised);
+    await play([K(1, 1, 0, 0, 0, HOLD, 0), K(1, 1, 0, 0, 0, 'ease-out', .43), K(1.07, .8, 0, 2, 0, HOLD, .86), K(1.07, .8, 0, 2, 0, HOLD, 1)], 420, '50% 100%');
+    // The pop: one frame tall, two frames wide and squashed, settle. Water flies out as a ring of bubbles.
+    fish.classList.add('puffed'); cel('face', 0);
+    let r = box(); bubbles(8, r.left + 32, r.top + 28, 5, 10, .9, true);
+    let paddle = 0; const fins = setInterval(() => fish.style.setProperty('--pf', [0, 1, 0, 2][paddle++ % 4]), 70);
+    const trickle = setInterval(() => { const q = box(); bubbles(1, q.left + 16 + Math.random() * 32, q.top + 6, 4, 7, .9); }, 380);
+    // Then the float: buoyant, he rises and rolls, slowly at first, past the tipping point onto his
+    // back, and rocks there. Never still, like the real fish.
+    await play([
+      K(.9, 1.24, 0, -10, 0, HOLD, 0), K(1.3, .8, 0, -4, 0, HOLD, .015), K(1.06, .95, 0, -6, 0, 'ease-out', .046), K(1, 1, 0, -6, 0, SOFT, .085),
+      K(1, 1, -14, -8, 2, SOFT, .27), K(1, 1, 22, -11, 5, TEETER, .5), K(1, 1, 176, -14, 7, SOFT, .8), K(1, 1, 186, -15, 6, SOFT, .9), K(1, 1, 178, -14, 5, SOFT, 1),
+    ], 2600, '50% 50%');
+    clearInterval(trickle);
+    // He bolts still puffed. The air leaks out at half speed as he goes: he shrinks while the jet
+    // spins him upright, then the flat fish squashes and stretches into the swim.
+    turned = -1; scared = true; ph = 0; v = 0; r = box(); bubbles(1, r.left + 30, r.top + 10, 11, 14, 1.3); go();
+    const leak = setInterval(() => { const q = box(); bubbles(1, q.left + 20 + Math.random() * 20, q.top + 12, 4, 7, .9); }, 140);
+    setTimeout(() => { clearInterval(fins); clearInterval(leak); fish.classList.remove('puffed'); cel('face', CEL.blink); }, 460);
+    await play([K(1, 1, 178, -14, 5, 'ease-in', 0), K(.78, .82, 300, -8, 3, HOLD, .55), K(.8, .72, 318, -10, 2, 'ease-out', .6), K(1.2, .9, 352, -4, 1, 'ease-out', .8), K(1, 1, 360, 0, 0, HOLD, 1)], 840, '50% 50%');
+    body.getAnimations().forEach(a => a.cancel()); body.style.transformOrigin = ''; fish.classList.remove('gag');
+    for (const f of [CEL.half, 0, CEL.half, CEL.blink, CEL.half, 0]) { cel('face', f); await wait(70); }
+    cel('face', CEL.faces.surprised);
+  };
+}
 </script>
 </body></html>
 `;
