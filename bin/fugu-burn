@@ -524,7 +524,7 @@ ${gsum ? '<p class="note">git counts every non-merge commit in repos your sessio
   let title, body;
   if (R.mode === 'compare') {
     const b = R.before.A, a = R.after.A;
-    title = `Before and after ${R.change}`;
+    title = `before / after ${R.change}`;
     body = `<p class="sub">Before ${e(b.from)} to ${e(b.to)}: ${b.sessions} sessions, ${e(usd(b.usd))}. After ${e(a.from)} to ${e(a.to)}: ${a.sessions} sessions, ${e(usd(a.usd))}.${filt ? ` Filtered: ${e(filt)}.` : ''}</p>
 ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = change(r), d = r.before ? (r.after - r.before) / r.before : null;
   return row([e(r.label), [e(r.before == null ? '–' : r.fmt(r.before)), r.before], [e(r.after == null ? '–' : r.fmt(r.after)), r.after], [`<span class="${c.good == null ? '' : c.good ? 'good' : 'bad'}">${e(c.s)}</span>`, d]]); }))}
@@ -532,23 +532,24 @@ ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = cha
 <div class="tabs" role="tablist"><button role="tab" aria-selected="true" data-p="after">After · ${e(a.from)} → ${e(a.to)}</button><button role="tab" aria-selected="false" data-p="before">Before · ${e(b.from)} → ${e(b.to)}</button></div>
 <section class="panel" id="after">${period(R.after)}</section><section class="panel" id="before" hidden>${period(R.before)}</section>`;
   } else {
-    title = `${R.A.from} to ${R.A.to}`;
+    title = `${R.A.from} → ${R.A.to}`;
     body = (filt ? `<p class="sub">Filtered: ${e(filt)}</p>` : '') + period(R);
   }
   let css = '';
   try { css = fs.readFileSync(path.join(F.FUGU_ROOT, 'lib', 'report.css'), 'utf8'); } catch {}
-  // The pixel fish ships inline (header and favicon) so the report stays one file.
+  // FUGU from abunaico.com, flat and puffed, inlined so the report stays one file.
+  // Hovering the heading puffs it up, the same trick as the site's logo.
   let fish = '', icon = '';
   try {
-    const svg = fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', 'fugu-pixel.svg'), 'utf8');
-    icon = `<link rel="icon" href="data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}">`;
-    fish = svg.replace(/<\?xml[^>]*>|<!--[\s\S]*?-->|<title>[\s\S]*?<\/title>/g, '')
-      .replace(/<svg\b[^>]*?>/, m => m.replace(/\s(width|height|role|aria-label)="[^"]*"/g, '').replace('<svg', '<svg class="fish" aria-hidden="true" focusable="false"'));
+    const uri = f => `data:image/png;base64,${fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', f)).toString('base64')}`;
+    const flat = uri('fugu-flat.png'), puff = uri('fugu-puff.png');
+    icon = `<link rel="icon" href="${flat}">`;
+    fish = `<span class="fishes" aria-hidden="true"><img class="flat" src="${flat}" alt=""><img class="puff" src="${puff}" alt=""></span>`;
   } catch {}
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>fugu burn</title>${icon}<style>
+<title>FUGU the BURN</title>${icon}<style>
 ${css}</style></head><body>
-<h1>${fish || '🐡 '}fugu burn · <em>${e(title)}</em></h1>${body}
+<h1>${fish || '🐡 '}FUGU <span class="the">the</span> BURN <em>[${e(title)}]</em></h1>${body}
 <p class="note">Generated ${e(new Date().toISOString().slice(0, 16).replace('T', ' '))} from local Claude Code transcripts. Costs are estimates at Anthropic API list prices. Click a column to sort; indented rows stay with their group.</p>
 <script>
 function sortable(t) {
