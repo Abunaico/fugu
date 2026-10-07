@@ -612,7 +612,7 @@ ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = cha
     const uri = f => `data:image/png;base64,${fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', f)).toString('base64')}`;
     const flat = uri('fugu-flat.png'), puff = uri('fugu-puff.png');
     icon = `<link rel="icon" href="${flat}">`;
-    // The terminal's ANSI puffer, pixel for pixel, as a faint fixed backdrop.
+    // The terminal's ANSI puffer, pixel for pixel, at the bottom of the report.
     const bg = fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', 'fugu-puff-pixels.svg')).toString('base64');
     css += `\n:root{--fugu-backdrop:url("data:image/svg+xml;base64,${bg}")}\n`;
     fish = `<span class="fishes" aria-hidden="true"><img class="flat" src="${flat}" alt=""><img class="puff" src="${puff}" alt=""></span>`;
@@ -622,6 +622,7 @@ ${table(['Metric', 'Before', 'After', 'Change'], R.rows.map(r => { const c = cha
 ${css}</style></head><body>
 <h1>${fish || '🐡 '}FUGU <em>[ ${e(title)} ]</em></h1>
 <p class="tagline">Fu the Bloat. Cool the Burn.</p>${body}
+<div class="endfish" role="img" aria-label="FUGU, puffed up"></div>
 <p class="note">Generated ${e(new Date().toISOString().slice(0, 16).replace('T', ' '))} from local Claude Code transcripts. Costs are estimates at Anthropic API list prices. Click a column to sort; type in a filter box to narrow a long table. Indented rows stay with their group.</p>
 <script>
 function sortable(t) {

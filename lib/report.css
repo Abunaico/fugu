@@ -105,10 +105,6 @@ h1 .puff,h1:hover .flat{opacity:0} h1:hover .puff{opacity:1}
 .tfilter input:focus{outline:none; box-shadow:3px 3px 0 var(--accent)}
 .tfilter span{font:700 11px var(--pixel); color:var(--dim); text-transform:uppercase}
 tr[hidden]{display:none}
-/* the ANSI puffer from fugu-help: bold in the empty right margin on wide screens,
-   a faint watermark behind the content on narrow ones */
-body::before{content:""; position:fixed; z-index:-1; pointer-events:none; aspect-ratio:34/24;
-  top:50%; transform:translateY(-50%); right:clamp(8px, calc((100vw - 1040px)/4 - 90px), 120px);
-  width:clamp(140px, calc((100vw - 1040px)/2 - 32px), 360px);
-  background:var(--fugu-backdrop) no-repeat center/contain; opacity:.85}
-@media (max-width:1240px){body::before{top:auto; bottom:2vmin; right:1vmin; transform:none; width:56vmin; opacity:.14}}
+/* the ANSI puffer from fugu-help signs off the report */
+.endfish{display:block; width:min(300px,70vw); aspect-ratio:34/29; margin:36px auto 8px;
+  background:var(--fugu-backdrop) no-repeat center/contain; image-rendering:pixelated}
