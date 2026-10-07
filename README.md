@@ -1,8 +1,18 @@
-# 🐡 FUGU: Fleet & Usage Gauge Utility
+<p align="center">
+  <img src="assets/banner.svg" alt="FUGU: Fleet &amp; Usage Gauge Utility, a pixel pufferfish on a blue arcade screen" width="720">
+</p>
+
+# FUGU: Fleet & Usage Gauge Utility
+
+<img src="assets/fugu-pixel.svg" alt="" width="48" align="right">
 
 **Harness chrome for Claude Code.**
 Simple as Grokbot. Powerful as Hermes. Meme as OpenClaw. The *abunai* fish:
 prepared wrong, it kills. So FUGU watches your gauges, and it inflates as your context fills.
+
+Fugu is Japanese for pufferfish, and abunai means dangerous, which is the point: a session
+left alone burns money quietly, so this one sits in your statusline, counts every token you
+spend, and tells you which habit cost what, with the receipts to back it.
 
 ```
 🐡 Opus 5.5 [high · Explanatory] · 👤 you@example.com (max)
@@ -22,7 +32,8 @@ your disk. No OAuth token handling, no credential intermediation, no network cal
 | **Context + cache viewer** (`bin/fugu-context`) | What is filling the context window, how well the prompt cache is holding, and why it broke when it did. Per-turn usage, hit rate, cache breaks with a likely cause, largest context items, subagent usage. |
 | **Accounts** (`bin/fugu-accounts`) | Every Claude Code login on the machine (default config plus profile dirs) with its last-known 5h/7d usage and reset times, side by side. Tells you which account has room without touching a single token. |
 | **Fleet dashboard** (`subagent-statusline.sh`) | Every running subagent as `⚡ finder [opus-5] ▸ running · 42k 21%`. Fits the terminal: model, context %, tokens, and status drop in that order, then the name is clipped with `…`. Applied automatically while the plugin is enabled. |
-| **Session radar** (`bin/fugu-sessions`) | Cross-project index of every Claude Code session on the machine: age, size, first prompt, resume command. Incremental byte-range indexing, so only new bytes are ever re-read. |
+| **Session radar** (`bin/fugu-sessions`) | Cross-project index and manager for every Claude Code session on the machine: age, cost, project, resume command. Name, star, archive, or assign a session to a project. Save transcripts before Claude Code's 30-day cleanup deletes them, and restore them later. Incremental byte-range indexing, so only new bytes are ever re-read. |
+| **Burn report** (`bin/fugu-burn`) | Where the tokens went: cost by project and model, a practices check (big models doing execution, mid-work compactions, cache restores after idle, CLAUDE.md load, files re-read), value proxies (commits and PRs per dollar), and a before/after comparison for a habit change. `--html` writes one self-contained file to share. |
 | **Watch** (`bin/fugu-watch`) | Background monitor. Tells you in-session when *another* session finishes its turn, stops on an error, or goes quiet mid-turn (possible stall). |
 | **Banner** | SessionStart hook. You'll know it when you see it. |
 
@@ -33,9 +44,12 @@ your disk. No OAuth token handling, no credential intermediation, no network cal
 | `/fugu:hud` | Check, install, repair, or remove the HUD statusline |
 | `/fugu:context` | Context breakdown and cache report for this (or any) session |
 | `/fugu:accounts` | Usage across every login on the machine |
-| `/fugu:sessions` | Scan the session radar |
+| `/fugu:sessions` | Scan, name, star, archive, assign, save, and restore sessions |
+| `/fugu:burn` | Cost and practices report; before/after a habit change |
 | `/fugu:open` | Resume or fork a session into a new tmux/Warp pane |
 | `/fugu:fleet` | Explain or tune the subagent dashboard |
+| `/fugu:layout` | List, switch, or make HUD layouts |
+| `/fugu:detailed`, `/fugu:compact` | Layout shortcuts |
 | `/fugu:settings` | Turn individual features on or off |
 | `/fugu:off`, `/fugu:on` | Mute or unmute everything without uninstalling |
 | `/fugu:help` | List every fugu command |
@@ -128,6 +142,23 @@ What's measured and what's estimated:
   `prompt_cache.expires_at` when present; on older versions it falls back to the last cache
   write in the transcript (only the last 256 KB is read).
 - **`[high · Explanatory]`**: effort level and output style. The default style isn't shown.
+- **Layouts.** What goes on which line is a small YAML file, one per layout. Built-in:
+  `compact` (default), `detailed` (one labeled line per gauge, in words), and `all` (every
+  widget, like `/status`). Make your own with `fugu-config layout new <name>` and edit
+  `~/.fugu/layouts/<name>.yaml`; switch with `/fugu:layout <name>`. Format and the widget
+  list: [layouts/README.md](layouts/README.md). `FUGU_LAYOUT=<name>` overrides per terminal.
+
+  ```yaml
+  # detailed.yaml
+  lines:
+    - [fish, model, mode, ·, account, plan]
+    - context:      [context-bar, context-full, ·, context-tokens, ·, context-warning]
+    - 5-hour limit: [5h-used, ·, 5h-resets, 5h-clock, ·, 5h-pace-words]
+    - weekly limit: [7d-used, ·, 7d-resets, 7d-clock, ·, 7d-pace-words]
+    - prompt cache: [cache-words, cache-why]
+    - cost:         [cost-words]
+    - [dir, ·, git]
+  ```
 - **Fits the terminal.** Claude Code passes `COLUMNS` and cuts off anything wider, so the HUD
   sheds detail as the terminal narrows instead of losing the end of the line: pace projections
   go first, then reset countdowns, the bar, cost, and cache; on line 1 the output style, plan,
@@ -149,6 +180,98 @@ whose reset time has passed shows 0%. Profiles are found in `~/.claude.json`, `$
 `~/.aimux/profiles/*`, `~/.claude-profiles/*`, and `$FUGU_PROFILE_DIRS` (colon-separated). To
 work as another account, start Claude Code with that profile: `CLAUDE_CONFIG_DIR=<dir> claude`.
 fugu never copies or swaps credentials.
+
+## Burn report
+
+```bash
+fugu-burn                             # last 30 days, every project
+fugu-burn --days 7 --project swingr
+fugu-burn --account infernored          # one login's sessions
+fugu-burn --since-change 2026-10-01   # before vs after a habit change
+fugu-burn --html report.html          # one self-contained file to share
+fugu-burn --git                       # add commits and lines changed per repo (--full, and --html, include it)
+```
+
+```
+PRACTICES
+  ▲ Big models doing execution     69% of Edit/Write/Bash calls ran on Opus or Fable
+    Opus-High to plan and review, Sonnet-High to execute (infra excepted).
+  ▲ Cache restores after idle      248 returns after the cache expired · $825 (9% of spend)
+    Coming back after the cache TTL rewrites the whole context. Compact before a long break.
+```
+
+- **Insights** rank the biggest levers by a monthly saving computed from your own data: execution
+  and subagents on Opus or Fable repriced at Sonnet, cache restores after idle, fixed prompt
+  overhead above 30k, average context above 200k, mid-session model switches, and compactions.
+  They overlap, so they're not additive.
+- **Session names**: the first word of a `/rename` title (`IRT-…`, `ACO-…`) becomes a workstream
+  tag, so renaming sessions gives spend by workstream. Every session is listed with its spend.
+- **Git** (with `--git`, `--full`, or `--html`): commits and lines changed per project in repos
+  your sessions worked in (found from where they edited files), with dollars per commit and per
+  1,000 lines. Each repo is queried with a 4 second timeout.
+- **The HTML report** is one file with no network: every table sorts by column; hovering a
+  project, account, tag, agent, work type, model, or session shows a card with its spend, model
+  mix, work mix, agents, and top sessions; clicking opens a drawer with every session behind it.
+  `--since-change` adds Before and After tabs, each a full report.
+- **What fugu costs** closes every report: the report itself is $0 (no model calls), the skill
+  listings fugu adds to each request, Haiku labels if you opted in, and the sessions spent
+  building fugu.
+- **Costs** are estimates at Anthropic API list prices, from the usage each response records
+  (streamed lines deduplicated, subagents included). On a subscription they show relative weight,
+  not your bill.
+- **Cost drivers** split every dollar into cache reads, cache writes (normal growth versus
+  returns after idle, session starts, compactions, model switches, and prefix changes), output,
+  and uncached input, plus main thread versus subagents, the fixed prompt overhead each request
+  carries (system prompt, tools, skills, CLAUDE.md), and requests per prompt.
+- **By agent** splits spend between your turns (the main thread) and subagents by type, with
+  UCEF specialists (`ucef-*`) grouped and counted by runs. Subagents record their type beside
+  their transcript, so this is exact.
+- **By work type** files each response under the highest-ranked tool it called: editing code,
+  editing docs (`.md`, `.txt`), shell, delegating to agents, reading and searching, other tools,
+  conversation with no tools, or rewriting the cache after a compaction. It sums to the total. The
+  compaction summary call itself isn't in transcripts, so it's estimated separately from each
+  compaction's size and left out of the totals.
+- **Practices** each map one habit to one number: execution tool calls by model family, manual
+  compactions followed by more work within 15 minutes versus before a break, cache rewrites after
+  the TTL expired (priced as the write cost above a cache read), CLAUDE.md and memory tokens times
+  requests, files read in three or more sessions, fixed prompt overhead, and the auto-compact threshold.
+- **Before/after** compares the period since a date with an equal period before it, as rates per
+  day or per unit (spend per commit, per PR) so unequal periods compare fairly. Commits and PRs are
+  rough value proxies; judging the work itself stays with people.
+- **Accounts** split spend per request by the organization Claude Code records for each
+  session (`credential_org`), so a session that switched logins is split correctly and subagents
+  follow their parent. Older transcripts that predate that record fall back to a profile's last
+  session per project, else show as unknown. Labels come from each profile's `.claude.json`
+  (email, plan, org). `--account <words>` narrows every section to sessions mostly on that login; every word must match (`--account "infernored enterprise"`).
+- **Projects** come from each session's git root, or its folder when there's no repo. A project
+  folder inside another is named `Parent/child` (`Abunaico/fugu`); drive roots and your home folder
+  never count as parents. Name a folder in `~/.fugu/projects.json`
+  (`{"projects": {"Abunaico": ["/Volumes/Flash4T/Development"]}}`) and everything beneath it nests
+  under that name. Fold names together with `fugu-sessions merge` (case-insensitive aliases, full
+  nested names too), or move one session with `fugu-sessions assign`.
+
+## Session manager
+
+```bash
+fugu-sessions name 745491b4 "Burn report build"
+fugu-sessions star 745491b4
+fugu-sessions archive 3f2a9c01          # hides it; nothing is deleted
+fugu-sessions assign 3f2a9c01 hermes
+fugu-sessions merge abunaico --into Abunaico   # fold renamed or duplicate project names
+fugu-sessions save                      # starred + anything within 7 days of deletion
+fugu-sessions saved                     # what's in ~/.fugu/archive; "pruned" = original gone
+fugu-sessions restore 3f2a9c01
+```
+
+Claude Code deletes transcripts after `cleanupPeriodDays` (default 30). `save` copies them, with
+their subagent transcripts, into `~/.fugu/archive`; fugu never moves or deletes a transcript.
+
+**Haiku names (opt-in, off until you say yes).** `fugu-sessions label` asks Haiku, through
+`claude -p` on your own login, for a short name and summary for unlabeled sessions. Only titles
+and first-prompt snippets are sent, never transcripts; it runs without tools, MCP servers, or
+saved settings, and isn't saved as a session. `/fugu:sessions` asks once. Say "not now" and it
+asks again on about one run in ten; say "never" and it never asks. Change it any time with
+`fugu-config set model.haiku on|off|never`.
 
 ## Settings
 
@@ -172,12 +295,14 @@ fugu-config reset                # everything back on
 | `hud.pace` | pace projection on the meters |
 | `hud.cache` | prompt-cache countdown |
 | `hud.cost` | session cost |
+| `hud.nudge` | "/compact before a break" hint once the context passes 150k tokens (yellow under 10 minutes of cache) |
 | `fleet` | subagent fleet rows |
 | `banner` | session start banner |
 | `watch` | cross-session watch notifications |
 
 State lives in `~/.fugu/config` as `key=off` lines (anything not listed is on), so you can
-also edit it by hand. The HUD parses it in pure bash, so a switched-off feature costs nothing and
+also edit it by hand. `model.haiku` is a choice (`ask`, `on`, `off`, `never`) set with
+`fugu-config set`; `reset` leaves it alone, so "never" stays never. The HUD parses it in pure bash, so a switched-off feature costs nothing and
 also skips its work (no git refresh, no transcript read). Changes apply on the next render.
 
 ## Knobs
@@ -190,7 +315,7 @@ also skips its work (no git refresh, no transcript read). Changes apply on the n
   detached background job, so a hung network mount can't stall the render.
 - The account segment follows `CLAUDE_CONFIG_DIR`, so each profile shows its own login. If
   `ANTHROPIC_API_KEY` is set it shows `API key` instead (the key itself is never printed).
-- `fugu-sessions --project <substr> --limit N --json --active --search <text> --reindex`.
+- `fugu-sessions --project <substr> --limit N --json --active --search <text> --starred --archived --reindex`.
   The cache lives at `~/.fugu/sessions-cache.json`: one full scan, then warm scans in tens of
   milliseconds.
 
@@ -199,8 +324,13 @@ also skips its work (no git refresh, no transcript read). Changes apply on the n
 FUGU only reads files on your machine that Claude Code already wrote: session transcripts under
 `~/.claude/projects` and the account profile in `.claude.json` (email, org name, plan type; never
 tokens). It writes only to `~/.cache/fugu` (git status, window size, cache TTL tier, and last-seen usage per
-account) and `~/.fugu` (settings and the radar index), both private to your user, and skips writing
-if the cache dir isn't owned by you. Nothing leaves your machine. Text that comes from transcripts,
+account) and `~/.fugu` (settings, the radar index, session metadata, and saved transcripts), all private
+to your user, and skips writing if the cache dir isn't owned by you. Two features call Haiku through
+your own `claude` login, so their input goes to Anthropic: **autoname** (on by default) sends a
+session's first prompts, its folder, and your past session titles to name it
+`ACCOUNT-CATEGORY-PROJ-TASK-SUB` (`fugu-config off autoname` turns it off), and **Haiku labels**
+(off until you say yes) send session titles and first-prompt snippets. Nothing else leaves your
+machine. Text that comes from transcripts,
 repos, or config (titles, paths, branch names, emails, model names) is stripped of terminal control
 characters, including C1 and carriage returns, before it reaches your terminal or Claude's context.
 

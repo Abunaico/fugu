@@ -17,7 +17,7 @@ const INTERVAL = (parseInt(process.env.FUGU_WATCH_INTERVAL, 10) || 15) * 1000;
 const ONCE = process.env.FUGU_WATCH_ONCE === '1';
 const IDLE_MS = 60e3;      // busy→idle after this much write silence
 const FRESH_MS = 30 * 60e3; // ignore sessions idle longer than this at startup
-const clean = v => String(v || '').replace(/[\x00-\x1f\x7f-]/g, '').slice(0, 70);
+const clean = v => String(v || '').replace(/[\x00-\x1f\x7f\u0080-\u009f]/g, '').slice(0, 70);
 
 // sessionId -> { mtime, busy, announcedIdleAt, size }
 const seen = new Map();
@@ -47,7 +47,7 @@ function label(fp, dirName) {
   // Cheap title: reuse the radar's cache if present, else project dir name.
   try {
     const cache = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.fugu', 'sessions-cache.json'), 'utf8'));
-    const rec = cache[fp];
+    const rec = (cache.files || {})[fp];
     const st = rec && (rec.disp || rec.state);
     if (st) return clean(st.customTitle || st.aiTitle || st.slug || st.summary) || dirName;
   } catch {}

@@ -20,16 +20,22 @@ strip_ansi() { LC_ALL=C sed $'s/\033\\[[0-9;]*m//g'; }
 echo "— statusline degradation —"
 out=$(echo 'not json' | ./statusline.sh 2>&1); echo "$out" | grep -q 'jq:' && bad "garbage stdin silent" || ok "garbage stdin silent"
 out=$(echo -n '' | ./statusline.sh 2>&1); echo "$out" | grep -qE 'error|expected' && bad "empty stdin silent" || ok "empty stdin silent"
-out=$(echo '{}' | ./statusline.sh 2>/dev/null | head -1); echo "$out" | grep -q '📁 ?' && ok "empty cwd → ?" || bad "empty cwd → ? (got: $out)"
+out=$(echo '{}' | ./statusline.sh 2>/dev/null | tail -1); echo "$out" | grep -q '📁 ?' && ok "empty cwd → ?" || bad "empty cwd → ? (got: $out)"
+echo '{"workspace":{"current_dir":"/tmp"}}' | ./statusline.sh >/dev/null 2>&1 && ok "HUD exits 0" || bad "HUD exits non-zero (Claude Code hides it)"
 out=$(echo '{"workspace":{"current_dir":"/tmp"},"context_window":{"used_tokens":190000,"context_window_size":200000}}' | ./statusline.sh | head -1)
 echo "$out" | grep -q '☠️' && ok "toxin ≥90% (95% input)" || bad "toxin ≥90% (95% input)"
+
+echo "— watch titles —"
+# clean() is evaluated on its own: running fugu-watch would start polling.
+cl=$(grep '^const clean' bin/fugu-watch)
+chk "watch keeps hyphens, drops C0/C1" "$(node -e "$cl; process.stdout.write(clean('fix-auth\u009b-bug\u0007'))")" "fix-auth-bug"
 
 echo "— statusline injection —"
 out=$(python3 -c 'import json;print(json.dumps({"model":{"display_name":"Ev]0;pwnil"},"workspace":{"current_dir":"/tmp"}}))' | ./statusline.sh | head -1)
 case "$out" in *$'\x1b]'*) bad "ESC stripped from model name";; *) ok "ESC stripped from model name";; esac
 
 echo "— statusline render path never blocks —"
-grep -n 'git ' statusline.sh | grep -v '(' | grep -qv '#' && bad "inline git found" || ok "git only in background subshell"
+grep -nE 'git (branch|status|rev-parse|diff|log|config|-C)' statusline.sh | grep -v '(' | grep -qv '#' && bad "inline git found" || ok "git only in background subshell"
 
 echo "— fleet —"
 out=$(echo '{"tasks":[{"id":"t1","name":"f","status":"running","tokenCount":42300,"contextWindowSize":200000}]}' | ./subagent-statusline.sh)
@@ -282,6 +288,57 @@ chk "fugu-config on removes key" "$(HOME=$TS node bin/fugu-config --json | jq -r
 HOME=$TS node bin/fugu-config off nope >/dev/null 2>&1; chk "unknown feature rejected" "$?" "2"
 HOME=$TS node bin/fugu-config reset >/dev/null
 chk "reset turns all on" "$(HOME=$TS node bin/fugu-config --json | jq '[.[]] | all')" "true"
+
+echo "— layouts —"
+mkdir -p "$TS/.fugu/layouts"
+lay() { echo "$SJ" | HOME=$TS XDG_CACHE_HOME=$TS/cache "$@" ./statusline.sh | strip_ansi; }
+out=$(cfgrun); case "$out" in *'5-hour limit'*) bad "compact by default";; *) ok "compact by default";; esac
+out=$(cfgrun 'layout=detailed')
+for want in '5-hour limit 60% used' 'resets in' 'cost         $1.50 this session'; do
+  case "$out" in *"$want"*) ok "detailed shows '$want'";; *) bad "detailed shows '$want' (got: $out)";; esac; done
+case "$out" in *'⏰'*) bad "detailed drops compact gauges";; *) ok "detailed drops compact gauges";; esac
+out=$(cfgrun 'layout=detailed' 'hud.cost=off'); case "$out" in *'this session'*) bad "layouts honor hud.cost=off";; *) ok "layouts honor hud.cost=off";; esac
+out=$(cfgrun 'layout=detailed' 'hud.reset=off'); case "$out" in *'resets in'*) bad "layouts honor hud.reset=off";; *) ok "layouts honor hud.reset=off";; esac
+case "$(cfgrun 'layout=detailed')" in *'weekly limit'*) bad "line with no data is skipped";; *) ok "line with no data is skipped";; esac
+out=$(printf 'layout=detailed\n' > "$TS/.fugu/config"; lay env FUGU_LAYOUT=compact)
+case "$out" in *'5-hour limit'*) bad "FUGU_LAYOUT overrides config";; *) ok "FUGU_LAYOUT overrides config";; esac
+out=$(cfgrun 'layout=all'); case "$out" in *'version'*'session'*'code changes'*) bad "all skips empty lines";; *'session'*) ok "all layout renders";; *) bad "all layout renders (got: $out)";; esac
+# Gauge lines only (no emoji), counted in characters rather than bytes.
+w=$(printf 'layout=detailed\n' > "$TS/.fugu/config"; lay env COLUMNS=50 | sed '1d;$d' |
+  { m=0; while IFS= read -r l; do [ ${#l} -gt $m ] && m=${#l}; done; echo $m; })
+[ "$w" -le 46 ] && ok "detailed fits 50 columns" || bad "detailed fits 50 columns (widest $w)"
+# A user layout: labels, separators that vanish with an empty widget, quoted text, typos.
+cat > "$TS/.fugu/layouts/mine.yaml" <<'EOF'
+# mine
+lines:
+  - [model, "::", cost]       # inline comment
+  - spend: [cost, ·, git, |, 5h]
+  - [nosuch]
+EOF
+out=$(cfgrun 'layout=mine')
+case "$out" in *'Claude :: $1.50'*) ok "quoted literal between widgets";; *) bad "quoted literal between widgets (got: $out)";; esac
+case "$out" in *'spend $1.50 | 5h 60%'*) ok "separator before an empty widget is held for the next";; *) bad "separator before an empty widget is held for the next (got: $out)";; esac
+case "$out" in *'?nosuch'*) ok "unknown widget shows as ?name";; *) bad "unknown widget shows as ?name";; esac
+printf '%s\n' 'lines:' '  - [model]' > "$TS/.fugu/layouts/compact.yaml"
+out=$(cfgrun); case "$out" in *'5h'*) bad "user layout overrides a built-in";; *Claude*) ok "user layout overrides a built-in";; esac
+rm -f "$TS/.fugu/layouts/compact.yaml"
+out=$(cfgrun 'layout=nope'); case "$out" in *"layout 'nope' not found"*'5h 60%'*|*'5h 60%'*"layout 'nope' not found"*) ok "missing layout falls back to compact with a note";; *) bad "missing layout falls back (got: $out)";; esac
+out=$(cfgrun 'layout=../../etc/passwd'); case "$out" in *'5h 60%'*) ok "layout name can't escape the layouts dir";; *) bad "layout name can't escape the layouts dir";; esac
+out=$(echo "$SJ" | HOME=$TS XDG_CACHE_HOME=$TS/cache bash -c 'cp statusline.sh "$HOME/sl.sh"; printf "layout=detailed\n" > "$HOME/.fugu/config"; bash "$HOME/sl.sh"' | strip_ansi)
+case "$out" in *'5h 60%'*) ok "no layouts folder still renders compact";; *) bad "no layouts folder still renders compact (got: $out)";; esac
+rm -f "$TS/.fugu/config"
+HOME=$TS node bin/fugu-config layout detailed >/dev/null
+chk "fugu-config layout writes layout=" "$(grep -c '^layout=detailed$' "$TS/.fugu/config")" "1"
+HOME=$TS node bin/fugu-config off hud.cost >/dev/null
+chk "feature switches keep the layout" "$(grep -c '^layout=detailed$' "$TS/.fugu/config")" "1"
+HOME=$TS node bin/fugu-config layout nope >/dev/null 2>&1; chk "unknown layout refused" "$?" "2"
+HOME=$TS node bin/fugu-config layout new ../x >/dev/null 2>&1; chk "bad new layout name refused" "$?" "2"
+HOME=$TS node bin/fugu-config layout new copy >/dev/null
+chk "layout new copies the active one" "$(grep -c '5-hour limit' "$TS/.fugu/layouts/copy.yaml")" "1"
+HOME=$TS node bin/fugu-config layout new copy >/dev/null 2>&1; chk "layout new never overwrites" "$?" "2"
+HOME=$TS node bin/fugu-config layout compact >/dev/null
+chk "compact (the default) writes no layout line" "$(grep -c '^layout=' "$TS/.fugu/config")" "0"
+HOME=$TS node bin/fugu-config reset >/dev/null
 rm -rf "$TS"
 
 echo "— hardening (review fixes) —"
@@ -289,7 +346,8 @@ TX=$(mktemp -d)
 hasctl() { LC_ALL=C grep -q $'\x1b\\|\r\\|\xc2[\x80-\x9f]'; }
 out=$(python3 -c 'import json;print(json.dumps({"model":{"display_name":"Op\u009b2J\u009d0;T\u009c"},"effort":{"level":"hi\rFAKE"},"output_style":{"name":"\u001b]0;x\u0007"},"workspace":{"current_dir":"/tmp/d\u009bx\ry"}}))' | HOME=$TX XDG_CACHE_HOME=$TX/c ./statusline.sh | LC_ALL=C sed $'s/\033\\[[0-9;]*m//g')
 echo "$out" | hasctl && bad "HUD strips C1 + CR from stdin fields" || ok "HUD strips C1 + CR from stdin fields"
-chk "HUD stays two lines" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
+# Injected CR/LF must not add lines: compact is always exactly three.
+chk "injected CR/LF adds no HUD lines" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "3"
 printf '%s' '{"oauthAccount":{"emailAddress":"a\u009b31m\u009d0;pwn\u009c\rEVIL@x.com"}}' > "$TX/.claude.json"
 out=$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TX XDG_CACHE_HOME=$TX/c ./statusline.sh | LC_ALL=C sed $'s/\033\\[[0-9;]*m//g')
 echo "$out" | hasctl && bad "HUD strips C1 from account email" || ok "HUD strips C1 from account email"
@@ -399,7 +457,7 @@ chk "install keeps other keys" "$(jq -c '[.permissions.allow[0], .model]' "$TH/.
 ls "$TH/.claude/"settings.json.bak.* >/dev/null 2>&1 && ok "install backs up settings" || bad "install backs up settings"
 [ -x "$TH/.fugu/bin/statusline" ] && ok "launcher executable" || bad "launcher executable"
 chk "root seeded to this copy" "$(cat "$TH/.fugu/root")" "$PWD"
-out=$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TH XDG_CACHE_HOME=$TH/c "$TH/.fugu/bin/statusline" | strip_ansi | head -1)
+out=$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TH XDG_CACHE_HOME=$TH/c "$TH/.fugu/bin/statusline" | strip_ansi | tail -1)
 case "$out" in *'📁 /tmp'*) ok "launcher renders the HUD";; *) bad "launcher renders the HUD (got: $out)";; esac
 hudcli status >/dev/null; chk "status healthy → exit 0" "$?" "0"
 # a plugin update moves the copy: the next session records it, the launcher follows
@@ -411,7 +469,7 @@ mkdir -p "$TH/.fugu"; touch "$TH/.fugu/disabled"; NEW2="$TH/newer"; mkdir -p "$N
 HOME=$TH CLAUDE_PLUGIN_ROOT=$NEW2 ./hooks/banner.sh >/dev/null; rm -f "$TH/.fugu/disabled"
 chk "copy recorded even while muted" "$(cat "$TH/.fugu/root")" "$NEW2"
 rm -rf "$NEW2"
-chk "launcher falls back when recorded copy is gone" "$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TH XDG_CACHE_HOME=$TH/c "$TH/.fugu/bin/statusline" | strip_ansi | head -1 | grep -c '📁 /tmp')" "1"
+chk "launcher falls back when recorded copy is gone" "$(echo '{"workspace":{"current_dir":"/tmp"}}' | HOME=$TH XDG_CACHE_HOME=$TH/c "$TH/.fugu/bin/statusline" | strip_ansi | tail -1 | grep -c '📁 /tmp')" "1"
 HOME=$TH CLAUDE_PLUGIN_ROOT="$TH/nope" ./hooks/banner.sh >/dev/null
 chk "bogus plugin root not recorded" "$(cat "$TH/.fugu/root")" "$NEW2"
 # migration from a fixed-path install; foreign statusLine is refused
@@ -433,6 +491,183 @@ printf '{}' > "$TH/real.json"; rm -f "$TH/.claude/settings.json"; ln -s "$TH/rea
 hudcli install >/dev/null
 [ -L "$TH/.claude/settings.json" ] && [ "$(jq -r '.statusLine.command | length > 0' "$TH/real.json")" = true ] && ok "symlinked settings edited at target" || bad "symlinked settings edited at target"
 rm -rf "$TH"
+
+echo "— autoname —"
+TN="$SANDBOX/an"; mkdir -p "$TN/.fugu"
+printf '#!/bin/sh\ncat >/dev/null; printf "Sure:\\n  irt bd reach!! pkg\\n"\n' > "$TN/stub"; chmod +x "$TN/stub"
+SID=aaaaaaaa-1111-2222-3333-444444444444; TR_="$TN/t.jsonl"; : > "$TR_"
+an() { jq -cn --arg p "$1" --arg s "${2:-$SID}" --arg t "$TR_" '{session_id:$s, transcript_path:$t, cwd:"/x/Infernored", prompt:$p}' \
+  | HOME=$TN FUGU_AUTONAME_CLAUDE=$TN/stub node bin/fugu-autoname hook; }
+waitp() { for _ in $(seq 50); do [ -f "$TN/.fugu/autoname/$SID.pending" ] && return; sleep 0.1; done; }
+chk "slash command not counted" "$(an /fugu:on)$(an one)$(an two)" ""
+chk "no title before 3 prompts" "$(jq '.prompts|length' "$TN/.fugu/autoname/$SID.json")" "2"
+an three >/dev/null; waitp
+chk "worker normalizes name" "$(jq -r .title "$TN/.fugu/autoname/$SID.pending")" "IRT-BD-REACH-PKG"
+chk "next prompt applies title" "$(an four | jq -r .hookSpecificOutput.sessionTitle)" "IRT-BD-REACH-PKG"
+echo '{"type":"custom-title","customTitle":"IRT-BD-REACH-PKG"}' >> "$TR_"; an mid >/dev/null
+chk "own title not mistaken for user's" "$(jq .done "$TN/.fugu/autoname/$SID.json")" "false"
+echo '{"type":"custom-title","customTitle":"MINE"}' >> "$TR_"
+an five >/dev/null
+chk "user rename wins" "$(jq .done "$TN/.fugu/autoname/$SID.json")" "true"
+chk "child process never names" "$(FUGU_AUTONAME_CHILD=1 an x bbbbbbbb-1; ls "$TN/.fugu/autoname" | grep -c bbbbbbbb)" "0"
+echo 'autoname=off' > "$TN/.fugu/config"; an x cccccccc-1 >/dev/null
+chk "autoname=off respected" "$(ls "$TN/.fugu/autoname" | grep -c cccccccc)" "0"
+chk "bad session id ignored" "$(an x '../../etc'; ls "$TN/.fugu" | grep -c etc)" "0"
+rm -rf "$TN"
+
+
+echo "— burn: usage, dedupe, cache breaks, compactions —"
+TB=$(mktemp -d); mkdir -p "$TB/.claude/projects/-tmp-burn" "$TB/repo/.git"
+D=$(date +%Y-%m-%d)
+BF="$TB/.claude/projects/-tmp-burn/eeeeeeee-1111-2222-3333-444444444444.jsonl"
+asst() { # id ts model input read w5 w1h out [tool]
+  local tool=""; [ -n "${9:-}" ] && tool=",{\"type\":\"tool_use\",\"id\":\"t$1\",\"name\":\"$9\",\"input\":{\"command\":\"git commit -m x\"}}"
+  printf '{"type":"assistant","timestamp":"%sT%s","message":{"id":"%s","model":"%s","usage":{"input_tokens":%s,"cache_read_input_tokens":%s,"cache_creation_input_tokens":%s,"cache_creation":{"ephemeral_5m_input_tokens":%s,"ephemeral_1h_input_tokens":%s},"output_tokens":%s},"content":[{"type":"text","text":"x"}%s]}}\n' \
+    "$D" "$2" "$1" "$3" "$4" "$5" $(( $6 + $7 )) "$6" "$7" "$8" "$tool"
+}
+{
+  printf '{"type":"user","timestamp":"%sT01:00:00Z","cwd":"%s/repo","message":{"content":"<b>&lt;script&gt;alert(1)</b> first prompt padded past the two hundred byte size gate for the radar scanner, yes indeed"}}\n' "$D" "$TB"
+  printf '{"type":"custom-title","customTitle":"<img src=x onerror=alert(1)>"}\n'
+  asst m1 01:00:01Z claude-opus-5 10 0 0 100000 1000 Bash
+  asst m1 01:00:02Z claude-opus-5 10 0 0 100000 3000
+  asst m2 01:01:00Z claude-sonnet-5 10 100000 0 0 500 Edit
+  asst m3 03:00:00Z claude-sonnet-5 10 0 0 100000 500
+  printf '{"type":"system","subtype":"compact_boundary","timestamp":"%sT03:01:00Z","compactMetadata":{"trigger":"manual","preTokens":120000,"postTokens":20000}}\n' "$D"
+  asst m4 03:02:00Z claude-sonnet-5 10 0 0 20000 500
+  printf '{"type":"pr-link","prUrl":"https://example.com/pull/1","timestamp":"%sT03:03:00Z"}\n' "$D"
+} > "$BF"
+burn() { HOME=$TB node bin/fugu-burn "$@"; }
+J=$(burn --json)
+chk "streamed usage counted once (opus output 3000)" "$(echo "$J" | jq '.A.models["claude-opus-5"].u[4]')" "3000"
+chk "requests deduped" "$(echo "$J" | jq '[.A.models[].u[5]] | add')" "4"
+# opus: 10*5 + 100000*10 (1h write) + 3000*25 → $1.07505; sonnet: 30*2 + 100000*.2 + 120000*4 + 1500*10 → $0.51506
+chk "cost at list price" "$(echo "$J" | jq '.A.usd * 100000 | round')" "159011"
+chk "idle return detected as cache break" "$(echo "$J" | jq '.A.brk.idle.n')" "1"
+chk "compaction break attributed" "$(echo "$J" | jq '.A.brk.compact.n')" "1"
+chk "manual early compaction counted" "$(echo "$J" | jq '.A.comp[1]')" "1"
+chk "compaction then work within 15m" "$(echo "$J" | jq '.A.comp[3]')" "1"
+chk "commits + PRs counted" "$(echo "$J" | jq '[.A.commits, .A.prs] | join(" ")' -r)" "1 1"
+chk "cost drivers sum to total" "$(echo "$J" | jq '(.A.drv.read + .A.drv.write + .A.drv.out + .A.drv.input - .A.usd) | fabs < 0.000001')" "true"
+chk "prompts counted" "$(echo "$J" | jq '.A.prompts')" "1"
+chk "fixed prefix = first request context" "$(burn --json | jq '.A.prefixTok / .A.mainReqs | round')" "100010"
+chk "opus share of execution" "$(echo "$J" | jq '.A.exec.opus')" "1"
+chk "project from git root" "$(echo "$J" | jq -r '.A.projects | keys[0]')" "repo"
+burn --html "$TB/r.html" >/dev/null
+grep -q '<img src=x\|<script>alert' "$TB/r.html" && bad "html escapes transcript text" || ok "html escapes transcript text"
+burn --since-change "$D" | grep -q 'Spend per day' && ok "before/after renders" || bad "before/after renders"
+burn --since-change "$D" | grep -q 'BY AGENT' && ok "before/after carries the full report" || bad "before/after carries the full report"
+burn --since-change "$D" --html "$TB/c.html" >/dev/null; grep -c 'class="panel"' "$TB/c.html" | grep -q 2 && ok "compare html has before and after panels" || bad "compare html has before and after panels"
+grep -q '</script><img\|"t":"<img' "$TB/r.html" && bad "session data blob escapes markup" || ok "session data blob escapes markup"
+chk "untagged title falls back to its start" "$(echo "$J" | jq -r '.A.list[0].tag')" "<IMG SRC=X ONERR"
+chk "insights ranked by saving" "$(echo "$J" | jq '[.insights[].save] | . == (sort | reverse)')" "true"
+chk "fugu cost footer present" "$(echo "$J" | jq '.fugu.skillTok > 100')" "true"
+chk "git off unless asked" "$(echo "$J" | jq '.git')" "null"
+burn --since-change nope >/dev/null 2>&1; chk "bad date rejected" "$?" "2"
+
+echo "— burn: accounts —"
+TA=$(mktemp -d); P="$TA/.claude/projects/-tmp-acct"
+mkdir -p "$P/aaaaaaaa-0000-0000-0000-000000000001/subagents" "$TA/.aimux/profiles/work"
+printf '{"oauthAccount":{"emailAddress":"me@home.test","organizationUuid":"org-home","organizationType":"claude_max","organizationRateLimitTier":"default_claude_max_20x","organizationName":"me@home.test'"'"'s Organization"}}' > "$TA/.claude.json"
+printf '{"oauthAccount":{"emailAddress":"me@work.test","organizationUuid":"org-work","organizationType":"claude_enterprise","organizationName":"Work Inc"},"projects":{"/tmp/w":{"lastSessionId":"aaaaaaaa-0000-0000-0000-000000000002"}}}' > "$TA/.aimux/profiles/work/.claude.json"
+up() { printf '{"type":"user","timestamp":"%sT01:00:00Z","cwd":"/tmp/acct","message":{"content":"a prompt long enough to clear the two hundred byte size gate of the radar scanner, padded out with words"}}\n' "$D"; }
+org() { printf '{"type":"attachment","timestamp":"%sT01:00:00Z","attachment":{"type":"credential_org","organizationUuid":"%s"}}\n' "$D" "$1"; }
+{ up; org org-home; asst a1 01:00:01Z claude-opus-5 1000000 0 0 0 0; org org-work; asst a2 01:00:02Z claude-sonnet-5 1000000 0 0 0 0; } > "$P/aaaaaaaa-0000-0000-0000-000000000001.jsonl"
+asst s1 01:00:03Z claude-haiku-4-5 1000000 0 0 0 0 > "$P/aaaaaaaa-0000-0000-0000-000000000001/subagents/agent-x.jsonl"
+{ up; asst b1 01:00:01Z claude-sonnet-5 1000000 0 0 0 0; } > "$P/aaaaaaaa-0000-0000-0000-000000000002.jsonl"
+{ up; asst c1 01:00:01Z claude-haiku-4-5 1000000 0 0 0 0; } > "$P/aaaaaaaa-0000-0000-0000-000000000003.jsonl"
+AJ=$(HOME=$TA node bin/fugu-burn --json)
+acct() { echo "$AJ" | jq --arg n "$1" '.A.accounts[$n].usd // 0 | round'; }
+chk "account switch mid-session splits spend" "$(acct 'me@home.test (Max 20x)')" "5"
+chk "subagent inherits account; profile fallback" "$(acct 'me@work.test (Enterprise, Work Inc)')" "5"
+chk "no record → unknown" "$(acct 'unknown (before Claude Code recorded the account)')" "1"
+chk "--account keeps sessions by majority spend" "$(HOME=$TA node bin/fugu-burn --account work --json | jq '.A.sessions')" "1"
+rm -rf "$TA"
+
+echo "— burn: agents and work types —"
+TW=$(mktemp -d); WP="$TW/.claude/projects/-w"; WS="$WP/cccccccc-0000-0000-0000-000000000001"; mkdir -p "$WS/subagents"
+tl() { printf '{"type":"assistant","timestamp":"%sT01:00:0%sZ","message":{"id":"%s","model":"claude-sonnet-5","usage":{"input_tokens":1000000,"output_tokens":0},"content":[%s]}}\n' "$D" "$2" "$1" "$3"; }
+{
+  printf '{"type":"user","timestamp":"%sT01:00:00Z","cwd":"/tmp/w","message":{"content":"a prompt long enough to clear the two hundred byte size gate of the radar scanner, padded with words"}}\n' "$D"
+  tl w1 1 '{"type":"text","text":"thinking out loud"}'
+  tl w1 2 '{"type":"tool_use","id":"a","name":"Edit","input":{"file_path":"/tmp/w/README.md"}}'
+  tl w2 3 '{"type":"tool_use","id":"b","name":"Edit","input":{"file_path":"/tmp/w/app.js"}}'
+  tl w3 4 '{"type":"tool_use","id":"c","name":"Bash","input":{"command":"ls"}}'
+  tl w4 5 '{"type":"text","text":"done"}'
+} > "$WS.jsonl"
+tl s1 6 '{"type":"text","text":"x"}' > "$WS/subagents/agent-1.jsonl"
+printf '{"agentType":"ucef-core:quality:qa-engineer"}' > "$WS/subagents/agent-1.meta.json"
+WJ=$(HOME=$TW node bin/fugu-burn --json)
+chk "response reclassed when a later line edits docs" "$(echo "$WJ" | jq '[.A.work.docs.reqs, .A.work.code.reqs, .A.work.shell.reqs, .A.work.talk.reqs] | join(" ")' -r)" "1 1 1 2"
+chk "work types sum to total" "$(echo "$WJ" | jq '([.A.work[].usd] | add) - .A.usd | fabs < 0.000001')" "true"
+chk "subagent cost by agent type" "$(echo "$WJ" | jq '[.A.agents["ucef-core:quality:qa-engineer"].usd, .A.agents["ucef-core:quality:qa-engineer"].runs] | join(" ")' -r)" "2 1"
+chk "main thread is your turns" "$(echo "$WJ" | jq '.A.agents[""].usd')" "8"
+rm -rf "$TW"
+
+echo "— projects: nesting —"
+TN=$(mktemp -d); NP="$TN/.claude/projects/-n"; mkdir -p "$NP" "$TN/work/app/.git" "$TN/work/docs"
+nest() { printf '{"type":"user","timestamp":"%sT01:00:00Z","cwd":"%s","message":{"content":"a prompt long enough to clear the two hundred byte size gate of the radar scanner, padded out with more words"}}\n' "$D" "$2" > "$NP/$1.jsonl"; asst n$1 01:00:01Z claude-haiku-4-5 10 0 0 0 0 >> "$NP/$1.jsonl"; }
+nest bbbbbbbb-0000-0000-0000-000000000001 "$TN/work"
+nest bbbbbbbb-0000-0000-0000-000000000002 "$TN/work/app/src"
+nest bbbbbbbb-0000-0000-0000-000000000003 "$TN/work/docs"
+pn() { HOME=$TN node bin/fugu-sessions --json | jq -r --arg id "$1" '.[] | select(.id | startswith($id)) | .projectName'; }
+chk "git root nested in a project folder" "$(pn bbbbbbbb-0000-0000-0000-000000000002)" "work/app"
+chk "plain folder nested" "$(pn bbbbbbbb-0000-0000-0000-000000000003)" "work/docs"
+printf '{"projects":{"Studio":["%s/work"]},"aliases":{"studio/docs":"Docs"}}' "$TN" > "$TN/.fugu/projects.json"
+chk "mapped parent names the prefix" "$(pn bbbbbbbb-0000-0000-0000-000000000002)" "Studio/app"
+chk "alias on a nested name" "$(pn bbbbbbbb-0000-0000-0000-000000000003)" "Docs"
+rm -rf "$TN"
+
+echo "— sessions: metadata, save, restore —"
+ss() { HOME=$TB node bin/fugu-sessions "$@"; }
+ss name eeeeeeee "Auth refactor" >/dev/null
+chk "name shows as title" "$(ss --json | jq -r '.[0].title')" "Auth refactor"
+ss star eeeeee >/dev/null; chk "star" "$(ss --json | jq '.[0].star')" "true"
+ss assign eeeeeeee Hermes >/dev/null; chk "assign project" "$(ss --json | jq -r '.[0].projectName')" "Hermes"
+chk "assigned project used by burn" "$(burn --json | jq -r '.A.projects | keys[0]')" "Hermes"
+ss assign eeeeeeee '<img src=x onerror=alert(1)>' >/dev/null; burn --html "$TB/r2.html" >/dev/null
+grep -q '<img src=x' "$TB/r2.html" && bad "html escapes project names" || ok "html escapes project names"
+ss assign eeeeeeee Hermes >/dev/null
+ss assign eeeeeeee hermes-old >/dev/null; ss merge HERMES-OLD --into Hermes >/dev/null
+chk "merge folds a name in (any case)" "$(ss --json | jq -r '.[0].projectName')" "Hermes"
+chk "merge applies to burn" "$(burn --json | jq -r '.A.projects | keys[0]')" "Hermes"
+ss merge hermes-old --into "" >/dev/null; chk "unmerge" "$(ss --json | jq -r '.[0].projectName')" "hermes-old"
+ss merge x >/dev/null 2>&1; chk "merge without --into refused" "$?" "2"
+ss assign eeeeeeee Hermes >/dev/null
+ss archive eeeeeeee >/dev/null; chk "archive hides" "$(ss --json | jq length)" "0"
+chk "--archived shows" "$(ss --archived --json | jq length)" "1"
+ss unarchive eeeeeeee >/dev/null
+ss name ee x >/dev/null 2>&1; chk "short id refused" "$?" "2"
+chk "meta file is private" "$(stat -c %a "$TB/.fugu/sessions-meta.json" 2>/dev/null || stat -f %Lp "$TB/.fugu/sessions-meta.json")" "600"
+ss save >/dev/null
+SV="$TB/.fugu/archive/-tmp-burn/eeeeeeee-1111-2222-3333-444444444444.jsonl"
+[ -f "$SV" ] && ok "save copies starred session" || bad "save copies starred session"
+chk "saved copy is private" "$(stat -c %a "$SV" 2>/dev/null || stat -f %Lp "$SV")" "600"
+rm "$BF"
+chk "saved lists pruned" "$(ss saved --json | jq '.[0].live')" "false"
+ss restore eeeeeeee >/dev/null
+cmp -s "$SV" "$BF" && ok "restore puts it back" || bad "restore puts it back"
+HOME=$TB node bin/fugu-sessions label >/dev/null 2>&1; chk "label refuses while Haiku is off" "$?" "3"
+
+echo "— config: Haiku opt-in —"
+cfg() { HOME=$TB node bin/fugu-config "$@"; }
+chk "haiku unset → ask" "$(cfg haiku-check)" "ask"
+cfg set model.haiku off >/dev/null
+chk "off → re-ask on a 1-in-10 roll" "$(FUGU_ROLL=0.05 cfg haiku-check)" "ask"
+chk "off → skip otherwise" "$(FUGU_ROLL=0.5 cfg haiku-check)" "skip"
+cfg off hud.git >/dev/null
+chk "feature toggles keep the setting" "$(cfg get model.haiku)" "off"
+cfg set model.haiku never >/dev/null; cfg reset >/dev/null
+chk "never survives reset" "$(FUGU_ROLL=0 cfg haiku-check)" "skip"
+cfg set model.haiku maybe >/dev/null 2>&1; chk "bad value refused" "$?" "2"
+cfg set model.haiku on >/dev/null; chk "on → on" "$(cfg haiku-check)" "on"
+
+echo "— HUD nudge —"
+NJ='{"workspace":{"current_dir":"/tmp"},"context_window":{"used_tokens":USED,"context_window_size":1000000}}'
+echo "${NJ/USED/400000}" | HOME=$TB ./statusline.sh | strip_ansi | grep -q 'compact before a break' && ok "nudge on big context" || bad "nudge on big context"
+echo "${NJ/USED/40000}" | HOME=$TB ./statusline.sh | strip_ansi | grep -q 'compact' && bad "no nudge on small context" || ok "no nudge on small context"
+cfg off hud.nudge >/dev/null
+echo "${NJ/USED/400000}" | HOME=$TB ./statusline.sh | strip_ansi | grep -q 'compact' && bad "nudge switch off" || ok "nudge switch off"
+rm -rf "$TB"
 
 echo ""
 echo "$PASS passed, $FAIL failed"

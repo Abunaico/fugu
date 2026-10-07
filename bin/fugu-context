@@ -35,7 +35,6 @@ const clean = v => String(v == null ? '' : v).replace(/[\x00-\x1f\x7f\u0080-\u00
 const n0 = v => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : 0; };
 const die = m => { console.error(`fugu-context: ${m}`); process.exit(1); };
 
-// --- locate the transcript ---
 function findTranscript() {
   if (positional && positional.endsWith('.jsonl')) return positional;
   const want = positional || (PROJ_FILTER ? null : SELF);
@@ -80,6 +79,7 @@ function eachLine(fp, fn) {
   } finally { fs.closeSync(fd); }
 }
 
+// ~4 characters per token: rough, but every estimate is rescaled to measured usage.
 const est = s => Math.ceil((typeof s === 'string' ? s.length : JSON.stringify(s || '').length) / 4);
 
 function resultTokens(content) {
@@ -108,7 +108,6 @@ function usageTotal(u) {
   return n0(u.input_tokens) + n0(u.cache_read_input_tokens) + n0(u.cache_creation_input_tokens);
 }
 
-// --- parse one transcript ---
 function parse(fp) {
   const S = {
     file: fp, title: null, model: null, cwd: null,
@@ -127,6 +126,7 @@ function parse(fp) {
     if (!S.cwd && typeof e.cwd === 'string') S.cwd = clean(e.cwd);
     if (e.type === 'custom-title' && e.customTitle) S.title = e.customTitle;
     else if (e.type === 'ai-title' && e.aiTitle && !S.title) S.title = e.aiTitle;
+    // Sidechain entries are subagent turns; they never enter this session's context.
     if (e.isSidechain) return;
 
     if (e.type === 'system' && e.subtype === 'compact_boundary') {
@@ -183,19 +183,20 @@ function parse(fp) {
   return S;
 }
 
-// --- analysis ---
 function analyze(S) {
   const reqs = [...S.reqs.values()].filter(r => r.model !== '<synthetic>');
   const turns = reqs.map(r => {
     const u = r.u, cc = u.cache_creation || {};
     let w1h = n0(cc.ephemeral_1h_input_tokens), w5 = n0(cc.ephemeral_5m_input_tokens);
     const write = n0(u.cache_creation_input_tokens);
+    // Transcripts without the 5m/1h split (or with a partial one): the rest is 5m.
     if (w1h + w5 !== write) { w5 = write - w1h; if (w5 < 0) { w5 = 0; w1h = write; } }
     return { ts: r.ts, model: r.model, input: n0(u.input_tokens), read: n0(u.cache_read_input_tokens),
       w5, w1h, write, output: n0(u.output_tokens), ctx: usageTotal(u), compactsBefore: r.afterCompact };
   });
 
   // Cache breaks: a request that re-wrote a big slice of the prefix instead of reading it.
+  // Every turn writes its own new tail, so small writes are normal and skipped.
   const breaks = [];
   turns.forEach((t, i) => {
     if (t.write < Math.max(10000, 0.3 * t.ctx)) return;
@@ -277,7 +278,6 @@ function subagents(fp) {
   });
 }
 
-// --- render ---
 function fmtDur(s) { return s < 90 ? `${Math.round(s)}s` : s < 5400 ? `${Math.round(s / 60)}m` : `${(s / 3600).toFixed(1)}h`; }
 const k = n => n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n);
 const pct = x => `${Math.round(x * 100)}%`;
