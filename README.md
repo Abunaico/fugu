@@ -250,6 +250,33 @@ PRACTICES
   under that name. Fold names together with `fugu-sessions merge` (case-insensitive aliases, full
   nested names too), or move one session with `fugu-sessions assign`.
 
+## Codex
+
+fugu reads OpenAI Codex sessions too (`$CODEX_HOME/sessions`, default `~/.codex`), the same way
+Switchboard does: each rollout carries its own folder, subagent threads attach to their parent, and
+titles (including Codex's `/rename`) come from `session_index.jsonl`. They show in the radar with a
+`cx` marker and `codex resume <id>` (`fugu-sessions --tool codex` lists only them), and in every burn
+report section, with a BY TOOL split. Requests come from Codex's cumulative token counts, filed by
+work type from the tool calls (`apply_patch`, `exec`, ...).
+
+fugu ships no OpenAI prices, so Codex shows exact tokens and "unpriced" dollars until you add your
+own prices in `~/.fugu/prices.json` (exact model name or prefix, $/MTok):
+
+```json
+{"models": {"<codex model>": {"input": 0, "cached": 0, "output": 0}}}
+```
+
+## Updating
+
+```bash
+fugu-update --check   # installed vs latest; changes nothing
+fugu-update           # or /fugu:update
+```
+
+It fast-forwards a git-clone marketplace (only a clean `main`; any other branch or local change is
+left alone and reported), refreshes the marketplace, and runs `claude plugin update` for every
+install scope. New sessions load the update.
+
 ## Session manager
 
 ```bash

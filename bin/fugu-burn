@@ -36,7 +36,7 @@ const projOf = s => nameProject(F.clean(s.state.cwd), (meta[s.id] || {}).project
 // last-session record, else unknown.
 const ACC = F.accounts();
 const orgFor = (org, s) => org || s.state.org || ACC.bySession[s.id] || '';
-const acctName = org => F.accountLabel(ACC.byOrg[org] || (org ? { email: `org ${org.slice(0, 8)}`, plan: '?', orgName: '' } : null));
+const acctName = org => org === 'codex' ? 'Codex (ChatGPT login)' : F.accountLabel(ACC.byOrg[org] || (org ? { email: `org ${org.slice(0, 8)}`, plan: '?', orgName: '' } : null));
 const mainAcct = new Map();
 function sessionAccount(s) {
   if (mainAcct.has(s.id)) return mainAcct.get(s.id);
@@ -57,7 +57,7 @@ function aggregate(from, to) {
     projects: {}, models: {}, exec: {}, comp: [0, 0, 0, 0, 0], brk: {}, edits: 0, commits: 0, prs: 0,
     memUsd: 0, reads: {}, unpriced: new Set(),
     drv: { read: 0, write: 0, out: 0, input: 0 }, accounts: {}, agents: {}, work: {}, compactCallUsd: 0,
-    list: [], tags: {}, execBig: { usd: 0, asSonnet: 0 }, subBig: { usd: 0, asSonnet: 0 }, repos: {}, mainUsd: 0, subUsd: 0, prompts: 0, prefixUsd: 0, prefixTok: 0, mainReqs: 0 };
+    list: [], tags: {}, tools: {}, execBig: { usd: 0, asSonnet: 0 }, subBig: { usd: 0, asSonnet: 0 }, repos: {}, mainUsd: 0, subUsd: 0, prompts: 0, prefixUsd: 0, prefixTok: 0, mainReqs: 0 };
   for (const s of sessions) {
     const name = projOf(s);
     let touched = false, sUsd = 0, sReqs = 0;
@@ -133,11 +133,17 @@ function aggregate(from, to) {
     });
     if (!touched) continue;
     A.sessions++; P().sessions++; P().memTok = Math.max(P().memTok, memTok);
+    const H = A.tools[s.harness] || (A.tools[s.harness] = { usd: 0, sessions: 0, reqs: 0, tokens: [0, 0, 0, 0, 0], unpriced: 0 });
+    H.sessions++;
+    F.eachDay(s, (d, b) => { if (d < from || d > to) return; for (const [m, u] of Object.entries(b.u)) {
+      H.usd += F.costOf(m, u); H.reqs += u[5]; for (let i = 0; i < 5; i++) H.tokens[i] += u[i];
+      if (!F.price(m)) H.unpriced += u[0] + u[1] + u[2] + u[3] + u[4];
+    } });
     // /rename titles are the user's own labels; their leading token (IRT-, ACO-) is a workstream tag.
     const mm = meta[s.id] || {}, renamed = F.clean(mm.name || s.state.customTitle);
     const tag = renamed ? ((/^([A-Za-z][A-Za-z0-9]*)[-_:\s]/.exec(renamed) || [])[1] || renamed).toUpperCase().slice(0, 16) : '(not renamed)';
-    A.list.push({ id: s.id, title: renamed || F.clean(mm.label || s.state.aiTitle || s.state.summary).slice(0, 60), renamed: !!renamed, tag,
-      project: name, account: sessionAccount(s), usd: sUsd, reqs: sReqs, days: sDays.size, md: sMd, wk: sWk, ag: sAg,
+    A.list.push({ id: s.id, title: renamed || F.clean(s.title || mm.label || s.state.aiTitle || s.state.summary).slice(0, 60), renamed: !!renamed, tag,
+      project: name, account: sessionAccount(s), harness: s.harness, usd: sUsd, reqs: sReqs, days: sDays.size, md: sMd, wk: sWk, ag: sAg,
       first: [...sDays].sort()[0], last: [...sDays].sort().pop() });
     const TG = A.tags[tag] || (A.tags[tag] = { usd: 0, sessions: 0 }); TG.usd += sUsd; TG.sessions++;
     for (const dir of [F.clean(s.state.cwd), ...Object.keys(s.state.editDirs || {})]) {
@@ -375,9 +381,17 @@ function text(R) {
       o.push(dim('  Each saving is computed from this period and scaled to 30 days. They overlap, so don\'t add them up.'));
       o.push('');
     }
+    if (Object.keys(A.tools).length > 1 || A.tools.codex) {
+      H('BY TOOL', 'spend   sessions   requests   input   cached   output', 44);
+      for (const [n, x] of Object.entries(A.tools).sort((p, q) => q[1].usd - p[1].usd)) {
+        o.push(`  ${(n === 'codex' ? 'Codex' : 'Claude Code').padEnd(28)} ${(x.unpriced && !x.usd ? 'unpriced' : usd(x.usd)).padStart(10)}  ${String(x.sessions).padStart(8)}  ${k(x.reqs).padStart(9)}  ${k(x.tokens[0] + x.tokens[2] + x.tokens[3]).padStart(6)}  ${k(x.tokens[1]).padStart(7)}  ${k(x.tokens[4]).padStart(7)}`);
+      }
+      if ((A.tools.codex || {}).unpriced) o.push(dim('  Codex models have no price in fugu: add your prices to ~/.fugu/prices.json as {"models": {"<model>": {"input": $/MTok, "cached": $/MTok, "output": $/MTok}}} to see dollars.'));
+      o.push('');
+    }
     H('BY ACCOUNT', 'spend  share  sessions', 70);
     for (const [n, x] of Object.entries(A.accounts).sort((p, q) => q[1].usd - p[1].usd)) {
-      o.push(`  ${n.slice(0, 66).padEnd(66)} ${usd(x.usd).padStart(8)}  ${pct(T ? x.usd / T : 0).padStart(5)}  ${String(x.sessions).padStart(8)}`);
+      o.push(`  ${n.slice(0, 66).padEnd(66)} ${(n.startsWith('Codex') && !x.usd ? 'unpriced' : usd(x.usd)).padStart(8)}  ${pct(T ? x.usd / T : 0).padStart(5)}  ${String(x.sessions).padStart(8)}`);
     }
     o.push(dim('  $ is API list price. Subscription plans (Pro, Max, Team) don\'t bill per token, so there it shows weight, not a bill.'));
     o.push('');
@@ -479,13 +493,16 @@ function html(R) {
     const T = A.usd, D = drivers(A), G = agentRows(A);
     const max = Math.max(1, ...Object.values(A.projects).map(p => p.usd));
     const stat = (v, l, tip) => `<div data-tip="${e(tip)}"><b>${e(v)}</b><span>${e(l)}</span></div>`;
-    const blob = JSON.stringify(A.list.map(x => ({ i: x.id, t: x.title, p: x.project, a: x.account, g: x.tag, u: +x.usd.toFixed(2), d: x.days, r: x.reqs, f: x.first, l: x.last,
+    const blob = JSON.stringify(A.list.map(x => ({ i: x.id, t: x.title, p: x.project, a: x.account, g: x.tag, u: +x.usd.toFixed(2), h: x.harness, d: x.days, r: x.reqs, f: x.first, l: x.last,
       md: round(x.md), wk: round(x.wk), ag: round(x.ag) }))).replace(/</g, '\\u003c');
     const gsum = GT && Object.values(GT).reduce((a, x) => ({ c: a.c + x.commits, i: a.i + x.ins, d: a.d + x.del, f: a.f + x.files }), { c: 0, i: 0, d: 0, f: 0 });
     const gUsd = GT ? Object.keys(GT).reduce((a, n) => a + ((A.projects[n] || {}).usd || 0), 0) : 0;
     return `<script type="application/json" class="fd">${blob}</script><div class="stats">${stat(usd(T), 'at API list prices', 'Every request priced at Anthropic list price: input, cache reads, 5m and 1h cache writes, and output. Subagents included.')}${stat(A.sessions, 'sessions', 'Sessions with any activity in this period.')}${stat(A.prompts, 'prompts', 'Messages you typed in the main thread (tool results and system notices excluded).')}${stat(D.perPrompt.toFixed(1), 'requests per prompt', 'Model calls per prompt in the main thread. Each one re-reads the whole context.')}${stat(k(D.avgCtx), 'avg context', 'Tokens the average request sends: cached plus new. Cache reads are this times every request.')}${stat('≈' + k(D.prefixTok), 'prompt overhead', 'The first request of each session: system prompt, tools, skills, MCP and CLAUDE.md. Every request carries it.')}${gsum ? stat(gsum.c, 'git commits', 'Non-merge commits in the period in repos your sessions worked in.') : ''}</div>
 ${IN.length ? `<h2>Insights <small>saving per month</small></h2><ol class="insights">${IN.map(x => `<li><b>${e(x.title)}</b><span>≈${e(usd(x.save))}</span><small>${e(x.detail)}<br>${e(x.action)}</small></li>`).join('')}</ol>
 <p class="note">Each saving is computed from this period and scaled to 30 days. They overlap, so don't add them up.</p>` : ''}
+${Object.keys(A.tools).length > 1 || A.tools.codex ? `<h2>By tool</h2>${table(['Tool', 'Spend', 'Sessions', 'Requests', 'Input', 'Cached', 'Output'], Object.entries(A.tools).sort((p, q) => q[1].usd - p[1].usd).map(([n, x]) =>
+  row([e(n === 'codex' ? 'Codex' : 'Claude Code'), x.unpriced && !x.usd ? ['unpriced', 0] : $(x.usd), N(x.sessions), K(x.reqs), K(x.tokens[0] + x.tokens[2] + x.tokens[3]), K(x.tokens[1]), K(x.tokens[4])], 0, ['harness', n])))}
+${(A.tools.codex || {}).unpriced ? '<p class="note">Codex models have no price in fugu. Add them to ~/.fugu/prices.json to see dollars; tokens are exact either way.</p>' : ''}` : ''}
 <h2>By account</h2>${table(['Account', 'Spend', 'Share', 'Sessions'], Object.entries(A.accounts).sort((p, q) => q[1].usd - p[1].usd).map(([n, x]) => row([e(n), $(x.usd), P(x.usd, T), N(x.sessions)], 0, ['account', n])))}
 <p class="note">Subscription plans (Pro, Max, Team) don't bill per token: there $ shows weight, not a bill.</p>
 <h2>By project</h2>${table(['Project', 'Spend', 'Share', 'Sessions', 'Opus exec', 'Cache restores', ...(GT ? ['Commits', '+Lines', '−Lines', '$/commit'] : [])],
@@ -572,14 +589,14 @@ document.querySelectorAll('table.s').forEach(sortable);
 const WORKL = ${JSON.stringify(WORK).replace(/</g, '\\u003c')};
 const money = v => v >= 1000 ? '$' + Math.round(v).toLocaleString('en-US') : v >= 100 ? '$' + Math.round(v) : '$' + v.toFixed(2);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
-const nameOf = (t, v) => t === 'agent' ? (v === '' ? 'Your turns (main thread)' : v === '@ucef' ? 'UCEF specialists' : v === '@other' ? 'Other subagents' : v)
+const nameOf = (t, v) => t === 'harness' ? (v === 'codex' ? 'Codex' : 'Claude Code') : t === 'agent' ? (v === '' ? 'Your turns (main thread)' : v === '@ucef' ? 'UCEF specialists' : v === '@other' ? 'Other subagents' : v)
   : t === 'work' ? (WORKL[v] || v) : v;
 const sumIf = (o, f) => Object.entries(o || {}).reduce((a, [k, x]) => a + (f(k) ? x : 0), 0);
 function pick(row) {
   const t = row.dataset.ft, v = row.dataset.fv, all = JSON.parse(row.closest('.panel, body').querySelector('script.fd').textContent);
   const amt = s => t === 'agent' ? (v === '@ucef' ? sumIf(s.ag, k => k.startsWith('ucef-')) : v === '@other' ? sumIf(s.ag, k => k && !k.startsWith('ucef-')) : s.ag[v] || 0)
     : t === 'work' ? s.wk[v] || 0 : t === 'model' ? s.md[v] || 0 : s.u;
-  const keep = s => t === 'project' ? s.p === v : t === 'account' ? s.a === v : t === 'tag' ? s.g === v : t === 'id' ? s.i === v : amt(s) > 0;
+  const keep = s => t === 'harness' ? s.h === v : t === 'project' ? s.p === v : t === 'account' ? s.a === v : t === 'tag' ? s.g === v : t === 'id' ? s.i === v : amt(s) > 0;
   return { t, v, rows: all.filter(keep).map(s => ({ ...s, x: amt(s) })).sort((a, b) => b.x - a.x) };
 }
 function mix(rows, key, label) {
