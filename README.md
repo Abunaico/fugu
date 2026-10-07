@@ -472,7 +472,8 @@ test with every fix.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Free to use, modify, and remix, commercial or not, with attribution to Anthony Shafer and
+[github.com/Abunaico/fugu](https://github.com/Abunaico/fugu). See [LICENSE](LICENSE).
 
 FUGU runs alongside Claude Code; it is not affiliated with or endorsed by Anthropic. Each user
 authenticates with their own account. Don't point it at other people's sessions.

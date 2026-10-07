@@ -1,16 +1,16 @@
-MIT License
+FUGU License (Free Use + Attribution)
 
 Copyright (c) 2026 Anthony Shafer
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, merge, publish, distribute, and remix the Software, for any
+purpose, commercial or not, subject to the following condition:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Any copy or substantial portion of the Software, and any work built from or
+remixing it, must give attribution to the original author and project:
+Anthony Shafer, https://github.com/Abunaico/fugu. A credit line in the
+README, about screen, or documentation of the derivative work satisfies this.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,

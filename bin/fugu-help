@@ -45,7 +45,7 @@ if (COLOR) {
   try { out.push(fs.readFileSync(path.join(F.FUGU_ROOT, 'assets', art), 'utf8').replace(/\n$/, '')); } catch {}
 }
 out.push(`${C('1;33', 'FUGU')} ${C('2', `v${version}`)}  ${C('3', 'Fu the Bloat. Cool the Burn.')}`);
-out.push(C('2', 'Fleet & Usage Gauge Utility for Claude Code and Codex · github.com/Abunaico/fugu · MIT'));
+out.push(C('2', 'Fleet & Usage Gauge Utility for Claude Code and Codex · github.com/Abunaico/fugu · free + attribution'));
 out.push('');
 const w = Math.max(...COMMANDS.map(c => c[0].length));
 for (const [cmd, what] of COMMANDS) out.push(`  ${C('36', cmd.padEnd(w))}  ${what}`);
