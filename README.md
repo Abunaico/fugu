@@ -477,3 +477,7 @@ Free to use, modify, and remix, commercial or not, with attribution to Anthony S
 
 FUGU runs alongside Claude Code; it is not affiliated with or endorsed by Anthropic. Each user
 authenticates with their own account. Don't point it at other people's sessions.
+
+<p align="center">
+  <img src="assets/fugu-bowl.gif" alt="FUGU in a fishbowl, puffing too big for it and settling back down" width="144">
+</p>
