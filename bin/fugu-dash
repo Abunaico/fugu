@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+// fugu-dash: live terminal panel for a split pane (Warp, iTerm, tmux).
+// Usage: fugu-dash [--project <substr>] [--every <seconds>]
+require('../panel/tui.js');

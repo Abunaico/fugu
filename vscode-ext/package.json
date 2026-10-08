@@ -1,0 +1,96 @@
+{
+  "name": "fugu-status",
+  "displayName": "🐡 Fugu Status",
+  "description": "Shows Claude Code context usage (via fugu) in the VS Code status bar for the official Claude Code extension.",
+  "version": "0.1.0",
+  "publisher": "infernored",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "fugu",
+          "title": "Fugu",
+          "icon": "icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "fugu": [
+        {
+          "type": "webview",
+          "id": "fuguSidebarView",
+          "name": "🐡 Dashboard"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "fuguStatus.openDashboard",
+        "title": "Open Dashboard",
+        "category": "🐡 Fugu"
+      },
+      {
+        "command": "fuguStatus.showDetail",
+        "title": "Show Context Detail",
+        "category": "🐡 Fugu"
+      },
+      {
+        "command": "fuguStatus.refresh",
+        "title": "Refresh Now",
+        "category": "🐡 Fugu"
+      }
+    ],
+    "configuration": {
+      "title": "Fugu Status",
+      "properties": {
+        "fuguStatus.pollIntervalSeconds": {
+          "type": "number",
+          "default": 20,
+          "minimum": 5,
+          "description": "How often to refresh context usage, in seconds."
+        },
+        "fuguStatus.fuguContextPath": {
+          "type": "string",
+          "default": "fugu-context",
+          "description": "Path to the fugu-context binary. Default assumes it is on PATH."
+        },
+        "fuguStatus.fuguBurnPath": {
+          "type": "string",
+          "default": "fugu-burn",
+          "description": "Path to the fugu-burn binary. Default assumes it is on PATH."
+        },
+        "fuguStatus.showCost": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show today's estimated cost for this workspace next to context usage."
+        },
+        "fuguStatus.costPollIntervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 15,
+          "description": "How often to refresh cost, in seconds. Cost scans more data than context, so this defaults slower."
+        },
+        "fuguStatus.fuguAccountsPath": {
+          "type": "string",
+          "default": "fugu-accounts",
+          "description": "Path to the fugu-accounts binary. Default assumes it is on PATH."
+        },
+        "fuguStatus.fuguSessionsPath": {
+          "type": "string",
+          "default": "fugu-sessions",
+          "description": "Path to the fugu-sessions binary. Default assumes it is on PATH."
+        }
+      }
+    }
+  }
+}
