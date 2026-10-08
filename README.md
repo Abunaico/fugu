@@ -265,8 +265,9 @@ hook, so its users see nothing. The panels render the same data anywhere else. O
 What's on it:
 
 - **Stat tiles**: spend, sessions, and requests today, plus the biggest saving lever.
-- **Context meter** for the current session, with the autocompact mark and a worded status
-  (room to work, filling up, near autocompact), and what is filling it.
+- **Open sessions**: a context meter for every Claude session touched in the last hour (up to 8),
+  with the autocompact mark, a worded status (room to work, filling up, near autocompact), cost, and
+  what is filling it. In VS Code, the workspace's own session is pinned first.
 - **Cost by project** today, as sorted bars.
 - **Insights**: fugu-burn's measured levers (7 days, scaled to a month) and, when
   `model.haiku` is `on`, 3 to 5 patterns Haiku writes from the same summary, naming the projects

@@ -94,6 +94,13 @@ function css(theme) {
   .ctx-meta .dim { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .chip { display:inline-block; font:700 10.5px var(--pixel); padding:1px 7px; border:2px solid var(--line); background:var(--tab);
     color:var(--ink); white-space:nowrap; margin-right:6px; border-radius:var(--radius); }
+  .open-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(300px,100%),1fr)); gap:12px; }
+  .open-session { border:2px solid var(--line); padding:10px 12px; min-width:0; border-radius:var(--radius); }
+  .open-session.mine { box-shadow:3px 3px 0 var(--shadow); background:var(--hover); }
+  .open-session .ctx-title { display:flex; align-items:center; gap:8px; }
+  .chip.here { background:var(--pill-bg); color:var(--pill-ink); }
+  .filling { margin-top:8px; }
+  .filling summary { font:700 10.5px var(--pixel); text-transform:uppercase; letter-spacing:.06em; color:var(--dim); cursor:pointer; margin-bottom:6px; }
   .meter { position:relative; height:14px; background:var(--rule); border:2px solid var(--line); border-radius:var(--radius); }
   .meter-fill { height:100%; }
   .meter-mark { position:absolute; top:-5px; bottom:-5px; width:3px; background:var(--line); }

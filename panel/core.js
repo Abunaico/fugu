@@ -69,12 +69,23 @@ async function gatherData({ bins = {}, projectFilter = null, regenInsights = fal
     effectiveFilter = sessionsList[0].project; // most recently active
   }
 
+  const settle = pr => pr.then(v => ({ status: 'fulfilled', value: v }), e => ({ status: 'rejected', reason: e }));
   const context = effectiveFilter
-    ? await run(fuguContext, ['--project', effectiveFilter, '--json']).then(
-        v => ({ status: 'fulfilled', value: v }),
-        e => ({ status: 'rejected', reason: e })
-      )
+    ? await settle(run(fuguContext, ['--project', effectiveFilter, '--json']))
     : { status: 'rejected', reason: new Error('no project to show') };
+
+  // Every open Claude session (fugu's --active rule: touched within the hour),
+  // capped so a busy machine doesn't fan out dozens of lookups per refresh.
+  const open = (Array.isArray(sessionsList) ? sessionsList : [])
+    .filter(s => s.status !== 'idle' && (s.harness || 'claude') === 'claude').slice(0, 8);
+  const openContexts = (await Promise.all(open.map(s =>
+    run(fuguContext, [s.id, '--json']).then(v => ({ ...v, live: s.status === 'active', projectName: s.projectName, cost: s.cost }), () => null))))
+    .filter(Boolean);
+  if (projectFilter && context.status === 'fulfilled') {
+    const ws = context.value, i = openContexts.findIndex(o => o.session === ws.session);
+    const mine = { ...(i >= 0 ? openContexts.splice(i, 1)[0] : ws), workspace: true };
+    openContexts.unshift(mine);
+  }
 
   return {
     burn: burn.status === 'fulfilled' ? burn.value : null,
@@ -85,6 +96,7 @@ async function gatherData({ bins = {}, projectFilter = null, regenInsights = fal
     accounts: accounts.status === 'fulfilled' ? accounts.value : null,
     sessions: sessionsList,
     context: context.status === 'fulfilled' ? context.value : null,
+    openContexts,
     errors: [burn, burnWeek, accounts, sessions, context]
       .filter(r => r.status === 'rejected')
       .map(r => (r.reason && r.reason.message) || String(r.reason)),
@@ -110,28 +122,34 @@ function renderKpis(A, data) {
   </div>`;
 }
 
-function renderContext(context, sectionTitle) {
-  if (!context || !context.context) return card(sectionTitle, empty('No Claude Code session found for this workspace yet.'));
-  const ctx = context.context;
+function meterBlock(ctx) {
   const pct = Math.round((ctx.pct || 0) * 100);
   const ac = ctx.autocompactPct || 80;
   const state = pct >= ac ? 'critical' : pct >= ac - 20 ? 'warning' : 'ok';
   const badge = state === 'critical' ? `<span class="badge critical">🔥 near autocompact</span>`
     : state === 'warning' ? `<span class="badge warning">⚠ filling up</span>` : `<span class="badge ok">✓ room to work</span>`;
   const fill = state === 'ok' ? 'var(--meter)' : state === 'warning' ? 'var(--warn)' : 'var(--bad)';
-  const comp = Array.isArray(ctx.composition) ? [...ctx.composition].sort((a, b) => (b.tok || 0) - (a.tok || 0)).slice(0, 5) : [];
-  const maxTok = Math.max(1, ...comp.map(c => c.tok || 0));
-  const body = `
-    <div class="ctx-title" title="${esc(context.cwd || '')}">${esc(context.title || 'Current session')}</div>
-    <div class="ctx-meta"><span class="chip">${esc(context.model || 'model?')}</span><span class="dim">${esc(context.cwd || '')}</span></div>
-    <div class="meter" title="${pct}% of ${k(ctx.window)} context window used; autocompact at ${ac}%">
+  return `<div class="meter" title="${pct}% of ${k(ctx.window)} context window used; autocompact at ${ac}%">
       <div class="meter-fill" style="width:${Math.min(100, pct)}%;background:${fill}"></div>
       <div class="meter-mark" style="left:${ac}%"></div>
     </div>
-    <div class="meter-row"><span><strong>${pct}%</strong> <span class="dim">${k(ctx.current)} / ${k(ctx.window)} tokens</span></span>${badge}</div>
-    ${comp.length ? `<div class="sub-head">What's filling it</div>
-    <div class="bars">${comp.map(c => barRow(c.cat, (c.tok || 0) / maxTok, `≈${k(c.tok)}`, `${c.cat}: about ${k(c.tok)} tokens`)).join('')}</div>` : ''}`;
-  return card(sectionTitle, body);
+    <div class="meter-row"><span><strong>${pct}%</strong> <span class="dim">${k(ctx.current)} / ${k(ctx.window)} tokens</span></span>${badge}</div>`;
+}
+
+function renderOpenSessions(list) {
+  if (!Array.isArray(list) || !list.length) return card('Open sessions', empty('No Claude Code session active in the last hour.'));
+  return card(`Open sessions · ${list.length}`, `<div class="open-grid">${list.map(o => {
+    const ctx = o.context || {};
+    const comp = Array.isArray(ctx.composition) ? [...ctx.composition].sort((a, b) => (b.tok || 0) - (a.tok || 0)).slice(0, 4) : [];
+    const maxTok = Math.max(1, ...comp.map(c => c.tok || 0));
+    const tag = o.workspace ? '<span class="chip here">this workspace</span>' : '';
+    return `<div class="open-session${o.workspace ? ' mine' : ''}">
+      <div class="ctx-title" title="${esc(o.cwd || '')}"><span class="dot ${o.live ? 'live' : ''}" aria-label="${o.live ? 'active' : 'recent'}"></span> ${esc(o.title || 'Untitled session')}</div>
+      <div class="ctx-meta">${tag}<span class="chip">${esc(o.model || 'model?')}</span><span class="dim">${esc(o.projectName || o.cwd || '')}${Number.isFinite(o.cost) ? ` · ${fmtUsd(o.cost)}` : ''}</span></div>
+      ${meterBlock(ctx)}
+      ${comp.length ? `<details class="filling"><summary>What's filling it</summary><div class="bars">${comp.map(c => barRow(c.cat, (c.tok || 0) / maxTok, `≈${k(c.tok)}`, `${c.cat}: about ${k(c.tok)} tokens`)).join('')}</div></details>` : ''}
+    </div>`;
+  }).join('')}</div>`);
 }
 
 function barRow(label, frac, value, tip) {
@@ -261,11 +279,9 @@ ${autoRefreshMeta}
     <div class="header-side"><span class="stamp">updated ${esc(updated)}</span><button onclick="refresh()">Refresh</button></div>
   </header>
   ${renderKpis(A, data)}
-  <div class="grid-2">
-    ${renderContext(data.context, sectionTitle)}
-    ${renderProjects(A)}
-  </div>
+  ${renderOpenSessions(data.openContexts)}
   ${renderInsights(data)}
+  ${renderProjects(A)}
   <div class="grid-2">
     ${renderSessions(data.sessions)}
     ${renderAccounts(data.accounts)}
