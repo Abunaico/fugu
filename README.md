@@ -34,6 +34,8 @@ your disk. No OAuth token handling, no credential intermediation, no network cal
 | **Fleet dashboard** (`subagent-statusline.sh`) | Every running subagent as `⚡ finder [opus-5] ▸ running · 42k 21%`. Fits the terminal: model, context %, tokens, and status drop in that order, then the name is clipped with `…`. Applied automatically while the plugin is enabled. |
 | **Session radar** (`bin/fugu-sessions`) | Cross-project index and manager for every Claude Code session on the machine: age, cost, project, resume command. Name, star, archive, or assign a session to a project. Save transcripts before Claude Code's 30-day cleanup deletes them, and restore them later. Incremental byte-range indexing, so only new bytes are ever re-read. |
 | **Burn report** (`bin/fugu-burn`) | Where the tokens went: ranked insights with a monthly saving, cost by account, project, session name, agent, work type, and model, a practices check (big models doing execution, mid-work compactions, cache restores after idle, CLAUDE.md load, files re-read), value proxies (commits and PRs per dollar, git lines), and a before/after comparison for a habit change. Claude Code and Codex sessions. `--html` writes one self-contained file to share. |
+| **Panels** (`panel/`, `vscode-ext/`, `bin/fugu-dash`) | The same dashboard in three places: a VS Code extension (🐡 status bar, sidebar view, editor tab) for people on the Claude Code VS Code extension, which never shows a statusLine; a local browser page; and `fugu-dash` for a Warp or tmux split. Spend, context meter, cost by project, recent sessions, accounts, and insights, including optional Haiku-written patterns. See [Panels](#panels). |
+| **Installer** (`bin/fugu-install`) | `npx github:Abunaico/fugu` adds the marketplace, installs the plugin, wires the HUD, and offers the VS Code panel and a Warp side pane. Also `update`, `uninstall`, `status`. |
 | **Watch** (`bin/fugu-watch`) | Background monitor. Tells you in-session when *another* session finishes its turn, stops on an error, or goes quiet mid-turn (possible stall). |
 | **Help** (`bin/fugu-help`) | Every command, plus FUGU drawn in truecolor ANSI pixels (`--puff` for the puffed one). |
 | **Update** (`bin/fugu-update`) | Brings every install scope up to the latest release. |
@@ -59,7 +61,19 @@ your disk. No OAuth token handling, no credential intermediation, no network cal
 
 ## Install
 
-Inside Claude Code:
+One command, from any terminal (needs `node` 18+ and Claude Code):
+
+```bash
+npx github:Abunaico/fugu
+```
+
+It runs the same steps as below through the `claude plugin` CLI: adds the `fugu-tools`
+marketplace, installs `fugu@fugu-tools` (user scope), points your statusLine at the HUD, then asks
+whether to add the VS Code panel and a Warp side pane. Flags: `--scope project`, `--vscode`,
+`--warp`, `--no-hud`, `--yes`, `--dry-run`. Later: `npx github:Abunaico/fugu update`,
+`... uninstall`, `... status`.
+
+Or inside Claude Code:
 
 ```
 /plugin marketplace add Abunaico/fugu
@@ -88,8 +102,10 @@ which fugu copy Claude Code loaded, and the launcher runs that one. After `/plug
 next session is on the new version with no reinstall. `/fugu:hud` with no argument reports
 what's wired, which copy is live, and any leftover copies. The fleet dashboard needs no setup.
 
-**Uninstall:** `/fugu:hud remove` (it only removes a statusLine that is fugu's), then remove the
-plugin. Caches live in `~/.cache/fugu` and `~/.fugu`.
+**Uninstall:** `npx github:Abunaico/fugu uninstall` removes the plugin, marketplace, HUD
+statusLine, VS Code panel, and Warp pane, and asks first. By hand: `/fugu:hud remove` (it only
+removes a statusLine that is fugu's), then remove the plugin. Caches live in `~/.cache/fugu` and
+`~/.fugu`; neither route deletes them.
 
 ## Building FUGU with FUGU
 
@@ -232,6 +248,39 @@ What's measured and what's estimated:
   sheds detail as the terminal narrows instead of losing the end of the line: pace projections
   go first, then reset countdowns, the bar, cost, and cache; on line 1 the output style, plan,
   git, and account. Segments that fit again come back. `FUGU_HUD_WIDTH` overrides the width.
+
+## Panels
+
+The HUD lives in the terminal's statusLine. The Claude Code VS Code extension never runs that
+hook, so its users see nothing. The panels render the same data anywhere else. One core
+(`panel/core.js`) gathers it from `fugu-burn`, `fugu-sessions`, `fugu-context`, and
+`fugu-accounts` (`--json`) and draws three ways:
+
+| Where | How to open it |
+|---|---|
+| **VS Code** | `npx github:Abunaico/fugu --vscode`, then reload VS Code. 🐡 in the status bar shows context % and today's cost for the open workspace (⚠ at 60%, 🔥 at 80%); click it for the dashboard. The fish in the Activity Bar opens a docked sidebar view. Commands are under **🐡 Fugu:** in the Command Palette. |
+| **Browser** | `node panel/server.js` (port 4850, `--port` to change), then open `http://localhost:4850`. `?project=<substr>` picks which session's context to show. Auto-refreshes every 20s. Binds to 127.0.0.1 only. |
+| **Terminal** | `fugu-dash` in a split pane (Warp, iTerm, tmux). `r` refresh, `g` regenerate insights, `q` quit; `--project`, `--every <s>`. The installer's `--warp` adds a launch configuration that opens your shell beside it. |
+
+What's on it:
+
+- **Stat tiles**: spend, sessions, and requests today, plus the biggest saving lever.
+- **Open sessions**: a context meter for every Claude session touched in the last hour (up to 8),
+  with the autocompact mark, a worded status (room to work, filling up, near autocompact), cost, and
+  what is filling it. In VS Code, the workspace's own session is pinned first.
+- **Cost by project** today, as sorted bars.
+- **Insights**: fugu-burn's measured levers (7 days, scaled to a month) and, when
+  `model.haiku` is `on`, 3 to 5 patterns Haiku writes from the same summary, naming the projects
+  they apply to. Haiku runs at most once an hour while a panel is open, never on the 20s poll,
+  plus a Regenerate button. A run takes about a minute and costs a few cents, counted in
+  `~/.fugu/spend.json`; the result is cached in `~/.fugu/insights.json`. Haiku's items are
+  suggestions; the levers are measurements.
+- **Recent sessions** (active ones marked) and **accounts**.
+
+The panels wear the same arcade look as the `fugu-burn --html` report (sky, navy, amber, hard
+shadows), with a navy dark mode that follows your system or VS Code theme, and fold to one column
+in a narrow sidebar. In VS Code, `fuguStatus.theme: editor` swaps it for your editor's colors. They call fugu's own `bin/` by path, so a GUI-launched VS Code without your shell
+PATH still finds them.
 
 ## Accounts
 
@@ -423,7 +472,8 @@ fugu-config reset                # everything back on
 
 State lives in `~/.fugu/config` as `key=off` lines (anything not listed is on), so you can
 also edit it by hand. `model.haiku` is a choice (`ask`, `on`, `off`, `never`) set with
-`fugu-config set`; `reset` leaves it alone, so "never" stays never. The HUD parses it in pure bash, so a switched-off feature costs nothing and
+`fugu-config set`; `reset` leaves it alone, so "never" stays never. The panels' Haiku insights
+run only when it is `on`. The HUD parses it in pure bash, so a switched-off feature costs nothing and
 also skips its work (no git refresh, no transcript read). Changes apply on the next render.
 
 ## Knobs
@@ -449,15 +499,19 @@ account) and `~/.fugu` (settings, the radar index, session metadata, and saved t
 to your user, and skips writing if the cache dir isn't owned by you. Two features call Haiku through
 your own `claude` login, so their input goes to Anthropic: **autoname** (on by default) sends a
 session's first prompts, its folder, and your past session titles to name it
-`ACCOUNT-CATEGORY-PROJ-TASK-SUB` (`fugu-config off autoname` turns it off), and **Haiku labels**
-(off until you say yes) send session titles and first-prompt snippets. Nothing else leaves your
-machine. Text that comes from transcripts,
+`ACCOUNT-CATEGORY-PROJ-TASK-SUB` (`fugu-config off autoname` turns it off), **Haiku labels**
+(off until you say yes) send session titles and first-prompt snippets, and **panel insights**
+(only with `model.haiku` set to `on`) send a usage summary: spend by model and project, the
+measured levers and practices, and the titles, costs, and message counts of your 15 most recent
+sessions, never transcripts. Nothing else leaves your machine. The browser panel listens on
+127.0.0.1 only. Text that comes from transcripts,
 repos, or config (titles, paths, branch names, emails, model names) is stripped of terminal control
 characters, including C1 and carriage returns, before it reaches your terminal or Claude's context.
 
 ## Requirements
 
-`jq`, `node`, macOS or Linux, and Claude Code. The rate meters need a Pro/Max login and appear
+`jq`, `node` (18+ for the installer and panels), macOS or Linux, and Claude Code. The VS Code panel
+needs VS Code 1.85+. The rate meters need a Pro/Max login and appear
 after the first response. The test battery also uses `python3`.
 
 ## Development
