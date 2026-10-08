@@ -79,6 +79,8 @@ async function gatherData({ bins = {}, projectFilter = null, regenInsights = fal
   return {
     burn: burn.status === 'fulfilled' ? burn.value : null,
     ruleInsights: burnWeek.status === 'fulfilled' ? (burnWeek.value.insights || []) : null,
+    monthlySpend: burnWeek.status === 'fulfilled' && burnWeek.value.A && burnWeek.value.A.days
+      ? (burnWeek.value.A.usd / burnWeek.value.A.days) * 30 : null,
     ai: aiValue,
     accounts: accounts.status === 'fulfilled' ? accounts.value : null,
     sessions: sessionsList,
@@ -140,6 +142,16 @@ function barRow(label, frac, value, tip) {
   </div>`;
 }
 
+// A lever's saving as a share of monthly spend (7-day spend scaled to 30 days,
+// the same basis fugu-burn scales the savings to). Shares overlap like the
+// savings do, so they don't sum to anything meaningful.
+function pctBox(save, monthly) {
+  if (!monthly || !(save > 0)) return '';
+  const pct = (save / monthly) * 100;
+  const shown = pct >= 10 ? Math.round(pct) : pct.toFixed(1);
+  return `<span class="pct" title="≈${fmtUsd(save)} of ≈${fmtUsd(monthly)} monthly spend">${shown}% of spend</span>`;
+}
+
 function renderInsights(data) {
   const ai = data.ai || {};
   let aiHtml;
@@ -166,11 +178,11 @@ function renderInsights(data) {
   const rulesHtml = rules.length
     ? `<div class="levers">${rules.map(i => `
       <details class="lever">
-        <summary><span class="lever-title">${esc(i.title)}</span><span class="pill">≈${fmtUsd(i.save)}/mo</span></summary>
+        <summary><span class="lever-title">${esc(i.title)}</span><span class="pill">≈${fmtUsd(i.save)}/mo</span>${pctBox(i.save, data.monthlySpend)}</summary>
         <div class="insight-pattern">${esc(i.detail)}</div>
         <div class="insight-action"><span class="arrow">→</span>${esc(i.action)}</div>
       </details>`).join('')}</div>
-      <div class="foot">Measured over the last 7 days, scaled to 30. Savings overlap, so don't add them up.</div>`
+      <div class="foot">Measured over the last 7 days, scaled to 30. % is the share of your monthly spend each lever would save. Savings overlap, so don't add them up.</div>`
     : empty('No measured levers for the last 7 days.');
 
   return card('Insights', `

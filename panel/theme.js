@@ -14,11 +14,13 @@ const path = require('path');
 const LIGHT = `--bg:#A9D5FA; --panel:#FFFFFF; --ink:#0B2350; --dim:#5E7088; --line:#0B2350; --rule:#C9DDF2;
   --head:#0B2350; --head-ink:#F2C230; --hover:#E8F3FD; --accent:#E0A526; --bar:#E0A526; --meter:#1E6FD9;
   --ok:#7DBEF5; --ok-ink:#0B2350; --warn:#F2602B; --warn-ink:#0B2350; --bad:#C9431A; --bad-ink:#FFFFFF;
-  --live:#1F8A3A; --shadow:#0B2350; --tab:#7DBEF5; --scan:rgba(11,35,80,.05); color-scheme:light;`;
+  --live:#1F8A3A; --shadow:#0B2350; --tab:#7DBEF5; --scan:rgba(11,35,80,.05); color-scheme:light;
+  --pill-bg:#0B2350; --pill-ink:#FFFFFF; --pct-bg:#FFFFFF; --pct-ink:#0B2350; --btn-bg:#0B2350; --btn-ink:#FFFFFF; --btn-glow:#E0A526;`;
 const DARK = `--bg:#0B2350; --panel:#10162E; --ink:#E4DEFF; --dim:#B3A8FF; --line:#3B2EA0; --rule:#1E2550;
   --head:#3B2EA0; --head-ink:#F2C230; --hover:#18204A; --accent:#F2C230; --bar:#C08A1A; --meter:#7DBEF5;
   --ok:#1E2550; --ok-ink:#E4DEFF; --warn:#F2602B; --warn-ink:#0B2350; --bad:#E0402A; --bad-ink:#FFFFFF;
-  --live:#3BD44F; --shadow:#000000; --tab:#1E2550; --scan:rgba(0,0,0,.18); color-scheme:dark;`;
+  --live:#3BD44F; --shadow:#000000; --tab:#1E2550; --scan:rgba(0,0,0,.18); color-scheme:dark;
+  --pill-bg:#F2C230; --pill-ink:#0B2350; --pct-bg:#10162E; --pct-ink:#E4DEFF; --btn-bg:#F2C230; --btn-ink:#0B2350; --btn-glow:#000000;`;
 const EDITOR = `--bg:var(--vscode-sideBar-background, var(--vscode-editor-background));
   --panel:var(--vscode-editorWidget-background, var(--vscode-editor-background)); --ink:var(--vscode-foreground);
   --dim:var(--vscode-descriptionForeground); --line:var(--vscode-widget-border, var(--vscode-panel-border, #8884));
@@ -26,7 +28,9 @@ const EDITOR = `--bg:var(--vscode-sideBar-background, var(--vscode-editor-backgr
   --hover:var(--vscode-list-hoverBackground); --accent:var(--vscode-charts-yellow, #E0A526); --bar:var(--vscode-charts-blue, #3987e5);
   --meter:var(--vscode-charts-blue, #3987e5); --ok:transparent; --ok-ink:var(--vscode-descriptionForeground);
   --warn:#fab219; --warn-ink:#1a1a19; --bad:#d03b3b; --bad-ink:#FFFFFF; --live:#0ca30c; --shadow:transparent;
-  --tab:var(--vscode-button-secondaryBackground, transparent); --scan:transparent;`;
+  --tab:var(--vscode-button-secondaryBackground, transparent); --scan:transparent;
+  --pill-bg:var(--vscode-badge-background); --pill-ink:var(--vscode-badge-foreground); --pct-bg:transparent; --pct-ink:var(--vscode-foreground);
+  --btn-bg:var(--vscode-button-background); --btn-ink:var(--vscode-button-foreground); --btn-glow:transparent;`;
 
 const asset = name => {
   try { return `data:image/png;base64,${fs.readFileSync(path.join(__dirname, '..', 'assets', name)).toString('base64')}`; } catch { return null; }
@@ -109,7 +113,7 @@ function css(theme) {
   .bar-value { font:700 12px var(--pixel); font-variant-numeric:tabular-nums; text-align:right; min-width:56px; }
   .insights { display:grid; gap:10px; counter-reset:ins; }
   .insight { display:grid; grid-template-columns:auto 1fr; column-gap:10px; counter-increment:ins; }
-  .insight::before { content:counter(ins); font:800 12px var(--pixel); color:#0B2350; background:var(--accent); padding:1px 6px;
+  .insight::before { content:counter(ins); font:800 12px var(--pixel); color:var(--pill-ink); background:var(--pill-bg); padding:1px 6px;
     box-shadow:2px 2px 0 var(--shadow); align-self:start; grid-row:span 3; }
   .insight-title { font-weight:700; }
   .insight-pattern { color:var(--dim); font-size:12px; margin-top:2px; }
@@ -125,8 +129,10 @@ function css(theme) {
   .lever:hover { background:var(--hover); }
   .lever-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
   .lever[open] .insight-pattern { margin-top:6px; }
-  .pill { font:800 11px var(--pixel); font-variant-numeric:tabular-nums; padding:1px 8px; background:var(--accent); color:#0B2350;
-    border:2px solid var(--line); white-space:nowrap; border-radius:var(--radius); }
+  .pill, .pct { font:800 11.5px/1.5 var(--pixel); font-variant-numeric:tabular-nums; padding:1px 8px; border:2px solid var(--line);
+    white-space:nowrap; border-radius:var(--radius); }
+  .pill { background:var(--pill-bg); color:var(--pill-ink); }
+  .pct { background:var(--pct-bg); color:var(--pct-ink); min-width:96px; text-align:right; font-weight:700; }
   .foot { font-size:11px; color:var(--dim); margin-top:8px; }
   .sessions { display:grid; }
   .session { display:grid; grid-template-columns:10px 1fr auto; gap:10px; align-items:center; padding:6px 0; border-top:1px solid var(--rule); }
@@ -144,11 +150,13 @@ function css(theme) {
   .account-email { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .account-meta { font-size:11px; color:var(--dim); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .empty { color:var(--dim); margin:0; font-size:12px; }
-  button { font:700 12px var(--pixel); text-transform:uppercase; letter-spacing:.05em; color:#0B2350; background:var(--accent);
-    border:var(--bw) solid var(--line); box-shadow:3px 3px 0 var(--shadow); padding:4px 12px; cursor:pointer; border-radius:var(--radius); }
-  button:hover { filter:brightness(1.06); }
-  button:active { transform:translate(2px,2px); box-shadow:1px 1px 0 var(--shadow); }
-  button.ghost { background:var(--tab); color:var(--ink); border-width:2px; box-shadow:2px 2px 0 var(--shadow); padding:2px 8px; font-size:10.5px; }
+  button { font:700 12px var(--pixel); text-transform:uppercase; letter-spacing:.05em; color:var(--btn-ink); background:var(--btn-bg);
+    border:var(--bw) solid var(--line); box-shadow:3px 3px 0 var(--btn-glow); padding:5px 14px; cursor:pointer; border-radius:var(--radius); }
+  button:hover { box-shadow:4px 4px 0 var(--btn-glow); transform:translate(-1px,-1px); }
+  button:active { transform:translate(2px,2px); box-shadow:1px 1px 0 var(--btn-glow); }
+  button:focus-visible { outline:3px solid var(--meter); outline-offset:2px; }
+  button.ghost { background:var(--panel); color:var(--ink); border-width:2px; box-shadow:2px 2px 0 var(--shadow); padding:3px 10px; font-size:11px; }
+  button.ghost:hover { background:var(--hover); box-shadow:3px 3px 0 var(--shadow); }
   .errors { color:var(--bad); font-size:11px; background:var(--panel); border:2px dashed var(--line); padding:6px 10px; }
   @media (max-width:360px) {
     body { padding:10px 8px; }
