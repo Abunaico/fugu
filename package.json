@@ -1,0 +1,28 @@
+{
+  "name": "@abunaico/fugu",
+  "version": "0.10.0",
+  "description": "🐡 FUGU installer: Fleet & Usage Gauge Utility for Claude Code. Installs the plugin from the fugu-tools marketplace, wires the HUD, and adds the VS Code panel and Warp side pane.",
+  "bin": {
+    "fugu": "bin/fugu-install"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "panel/",
+    "vscode-ext/",
+    ".claude-plugin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["claude-code", "claude", "statusline", "plugin", "vscode", "warp", "fugu"],
+  "homepage": "https://github.com/Abunaico/fugu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Abunaico/fugu.git"
+  },
+  "author": "Anthony Shafer",
+  "license": "SEE LICENSE IN LICENSE"
+}

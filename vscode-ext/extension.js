@@ -10,7 +10,7 @@ const vscode = require('vscode');
 const { execFile } = require('child_process');
 const dashboard = require('./dashboard');
 const { FuguSidebarViewProvider } = require('./sidebar-view');
-const { env, fuguBin } = require('../panel/env');
+const { env, fuguBin } = require('./panel-path')('env');
 
 let statusBarItem;
 let contextTimer;

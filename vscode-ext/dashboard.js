@@ -4,7 +4,7 @@
 // data gathering and rendering (shared with the standalone server).
 'use strict';
 const vscode = require('vscode');
-const core = require('../panel/core');
+const core = require('./panel-path')('core');
 
 let panel = null;
 

@@ -5,7 +5,7 @@
 // webview lives.
 'use strict';
 const vscode = require('vscode');
-const core = require('../panel/core');
+const core = require('./panel-path')('core');
 
 function config() {
   return vscode.workspace.getConfiguration('fuguStatus');
