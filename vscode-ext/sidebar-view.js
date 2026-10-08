@@ -68,7 +68,7 @@ class FuguSidebarViewProvider {
     try {
       const data = await core.gatherData({ bins: currentBins(), projectFilter: currentProjectFilter(), regenInsights: regen });
       if (this.view) {
-        this.view.webview.html = core.render(data, { mode: 'vscode', sectionTitle: 'This workspace' });
+        this.view.webview.html = core.render(data, { mode: 'vscode', sectionTitle: 'This workspace', themeName: config().get('theme', 'fugu') });
       }
     } catch (e) {
       if (this.view) {

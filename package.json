@@ -10,6 +10,8 @@
     "lib/",
     "panel/",
     "vscode-ext/",
+    "assets/fugu-flat.png",
+    "assets/fugu-puff.png",
     ".claude-plugin/",
     "README.md",
     "LICENSE"
@@ -17,7 +19,15 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["claude-code", "claude", "statusline", "plugin", "vscode", "warp", "fugu"],
+  "keywords": [
+    "claude-code",
+    "claude",
+    "statusline",
+    "plugin",
+    "vscode",
+    "warp",
+    "fugu"
+  ],
   "homepage": "https://github.com/Abunaico/fugu",
   "repository": {
     "type": "git",

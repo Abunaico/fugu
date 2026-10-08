@@ -89,6 +89,19 @@
           "type": "string",
           "default": "fugu-sessions",
           "description": "Path to the fugu-sessions binary. Default assumes it is on PATH."
+        },
+        "fuguStatus.theme": {
+          "type": "string",
+          "enum": [
+            "fugu",
+            "editor"
+          ],
+          "default": "fugu",
+          "enumDescriptions": [
+            "fugu's arcade look (sky, navy, amber), same as the fugu-burn HTML report",
+            "Blend in with your VS Code color theme"
+          ],
+          "description": "Dashboard style."
         }
       }
     }

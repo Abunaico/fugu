@@ -276,8 +276,9 @@ What's on it:
   suggestions; the levers are measurements.
 - **Recent sessions** (active ones marked) and **accounts**.
 
-The panels follow the VS Code theme, or light/dark in the browser, and fold to one column in a
-narrow sidebar. They call fugu's own `bin/` by path, so a GUI-launched VS Code without your shell
+The panels wear the same arcade look as the `fugu-burn --html` report (sky, navy, amber, hard
+shadows), with a navy dark mode that follows your system or VS Code theme, and fold to one column
+in a narrow sidebar. In VS Code, `fuguStatus.theme: editor` swaps it for your editor's colors. They call fugu's own `bin/` by path, so a GUI-launched VS Code without your shell
 PATH still finds them.
 
 ## Accounts

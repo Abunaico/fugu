@@ -123,11 +123,13 @@ function installVscode() {
     return;
   }
   const target = path.join(VSCODE_EXT_DIR, `${EXT_FOLDER}-${VERSION}`);
-  if (DRY) { console.log(C('2', `  would copy vscode-ext + panel + lib + bin into ${target}`)); return; }
+  if (DRY) { console.log(C('2', `  would copy vscode-ext + panel + lib + bin + fish art into ${target}`)); return; }
   for (const d of extDirs()) fs.rmSync(d, { recursive: true, force: true });
   copyDir(path.join(ROOT, 'vscode-ext'), target);
   copyDir(path.join(ROOT, 'panel'), path.join(target, 'panel'));
   copyDir(path.join(ROOT, 'lib'), path.join(target, 'lib'));
+  fs.mkdirSync(path.join(target, 'assets'), { recursive: true });
+  for (const a of ['fugu-flat.png', 'fugu-puff.png']) fs.copyFileSync(path.join(ROOT, 'assets', a), path.join(target, 'assets', a));
   copyDir(path.join(ROOT, 'bin'), path.join(target, 'bin'), n => n === 'fugu-install');
   fs.mkdirSync(path.join(target, '.claude-plugin'), { recursive: true });
   fs.copyFileSync(path.join(ROOT, '.claude-plugin', 'plugin.json'), path.join(target, '.claude-plugin', 'plugin.json'));

@@ -52,7 +52,7 @@ async function refreshPanel({ regen = false } = {}) {
   if (!panel) return;
   if (!regen) panel.webview.html = '<body style="font-family:sans-serif;padding:16px;">Loading…</body>';
   const data = await core.gatherData({ bins: currentBins(), projectFilter: currentProjectFilter(), regenInsights: regen });
-  if (panel) panel.webview.html = core.render(data, { mode: 'vscode', sectionTitle: 'This workspace' });
+  if (panel) panel.webview.html = core.render(data, { mode: 'vscode', sectionTitle: 'This workspace', themeName: config().get('theme', 'fugu') });
 }
 
 module.exports = { createOrShowDashboard, refreshPanel: () => refreshPanel() };

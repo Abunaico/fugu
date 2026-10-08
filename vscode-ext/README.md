@@ -17,8 +17,9 @@ they return.
 
 The dashboard shows spend, sessions, and requests today; the context meter with its autocompact
 mark; cost by project; insights (fugu-burn's measured levers, plus Haiku-written patterns when
-`model.haiku` is `on`); recent sessions; and your Claude Code accounts. It follows your VS Code
-theme and folds to one column in a narrow sidebar.
+`model.haiku` is `on`); recent sessions; and your Claude Code accounts. It uses fugu's arcade look
+(the same as the `fugu-burn --html` report), switches to its navy dark mode with a dark VS Code
+theme, and folds to one column in a narrow sidebar.
 
 Commands (Command Palette, **🐡 Fugu**): Open Dashboard, Show Context Detail, Refresh Now.
 
@@ -29,7 +30,7 @@ npx github:Abunaico/fugu --vscode
 ```
 
 Then reload VS Code (**Developer: Reload Window**). The installer copies this folder together
-with fugu's `panel/`, `lib/`, and `bin/` into `~/.vscode/extensions/infernored.fugu-status-<version>`,
+with fugu's `panel/`, `lib/`, `bin/`, and the fish art into `~/.vscode/extensions/infernored.fugu-status-<version>`,
 so the extension is self-contained and keeps working after npx clears its cache.
 `npx github:Abunaico/fugu update` refreshes it; `... uninstall` removes it.
 
@@ -50,6 +51,7 @@ unless you pass `--force`.
 | `fuguStatus.pollIntervalSeconds` | 20 | status bar refresh (min 5) and sidebar refresh (min 10) |
 | `fuguStatus.costPollIntervalSeconds` | 60 | status bar cost refresh (min 15) |
 | `fuguStatus.showCost` | true | show today's cost in the status bar |
+| `fuguStatus.theme` | `fugu` | `fugu` (arcade look) or `editor` (blend in with your VS Code theme) |
 | `fuguStatus.fugu*Path` | bundled | override the `fugu-context`, `fugu-burn`, `fugu-accounts`, `fugu-sessions` binaries |
 
 Haiku insights follow fugu's own setting: `fugu-config set model.haiku on` (or `off`). They run

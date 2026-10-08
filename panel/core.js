@@ -7,6 +7,7 @@
 const { execFile } = require('child_process');
 const insights = require('./insights');
 const { env, fuguBin } = require('./env');
+const theme = require('./theme');
 
 function run(bin, args) {
   return new Promise((resolve, reject) => {
@@ -89,7 +90,6 @@ async function gatherData({ bins = {}, projectFilter = null, regenInsights = fal
 }
 
 const k = n => { n = Number(n) || 0; return n < 1000 ? String(Math.round(n)) : n < 10000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n / 1000)}k`; };
-const STATUS = { warning: '#fab219', critical: '#d03b3b' };
 
 function empty(text) {
   return `<p class="empty">${esc(text)}</p>`;
@@ -116,7 +116,7 @@ function renderContext(context, sectionTitle) {
   const state = pct >= ac ? 'critical' : pct >= ac - 20 ? 'warning' : 'ok';
   const badge = state === 'critical' ? `<span class="badge critical">🔥 near autocompact</span>`
     : state === 'warning' ? `<span class="badge warning">⚠ filling up</span>` : `<span class="badge ok">✓ room to work</span>`;
-  const fill = state === 'ok' ? 'var(--series)' : STATUS[state];
+  const fill = state === 'ok' ? 'var(--meter)' : state === 'warning' ? 'var(--warn)' : 'var(--bad)';
   const comp = Array.isArray(ctx.composition) ? [...ctx.composition].sort((a, b) => (b.tok || 0) - (a.tok || 0)).slice(0, 5) : [];
   const maxTok = Math.max(1, ...comp.map(c => c.tok || 0));
   const body = `
@@ -223,7 +223,7 @@ function card(title, body) {
 // matching the onDidReceiveMessage handlers in dashboard.js and sidebar-view.js.
 // 'http' wires them to page loads and adds a meta auto-refresh, for the
 // standalone server with no extension host to message.
-function render(data, { mode = 'vscode', refreshSeconds = 20, sectionTitle = 'This workspace' } = {}) {
+function render(data, { mode = 'vscode', refreshSeconds = 20, sectionTitle = 'This workspace', themeName = 'fugu' } = {}) {
   const A = data.burn && data.burn.A ? data.burn.A : null;
   const refreshScript = mode === 'http'
     ? `function refresh() { location.reload(); }
@@ -240,117 +240,13 @@ function render(data, { mode = 'vscode', refreshSeconds = 20, sectionTitle = 'Th
 <meta name="viewport" content="width=device-width, initial-scale=1">
 ${autoRefreshMeta}
 <title>🐡 fugu</title>
-<style>
-  :root {
-    --fb-bg: #fcfcfb; --fb-plane: #f9f9f7; --fb-fg: #0b0b0b; --fb-muted: #52514e; --fb-border: #e4e3de; --fb-series: #2a78d6; --fb-track: #ecebe6;
-    --bg: var(--vscode-sideBar-background, var(--vscode-editor-background, var(--fb-plane)));
-    --card: var(--vscode-editorWidget-background, var(--fb-bg));
-    --fg: var(--vscode-foreground, var(--fb-fg));
-    --muted: var(--vscode-descriptionForeground, var(--fb-muted));
-    --border: var(--vscode-widget-border, var(--vscode-panel-border, var(--fb-border)));
-    --series: var(--vscode-charts-blue, var(--fb-series));
-    --track: var(--vscode-editorWidget-border, var(--fb-track));
-    --btn-bg: var(--vscode-button-background, var(--fb-series));
-    --btn-fg: var(--vscode-button-foreground, #ffffff);
-    --btn-hover: var(--vscode-button-hoverBackground, #1f63b5);
-    --err: var(--vscode-errorForeground, #d03b3b);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --fb-bg: #1a1a19; --fb-plane: #0d0d0d; --fb-fg: #ffffff; --fb-muted: #c3c2b7; --fb-border: #2e2e2c; --fb-series: #3987e5; --fb-track: #2a2a28; }
-  }
-  * { box-sizing: border-box; }
-  body {
-    font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
-    font-size: 13px; line-height: 1.45; color: var(--fg); background: var(--bg);
-    margin: 0; padding: 12px; transition: opacity .15s;
-  }
-  body.busy { opacity: .55; pointer-events: none; }
-  .wrap { max-width: 960px; margin: 0 auto; display: grid; gap: 12px; }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  header h1 { font-size: 16px; margin: 0; letter-spacing: -.01em; }
-  header .dim { font-size: 11px; }
-  .dim { color: var(--muted); }
-  .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  @media (min-width: 640px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-  .tile { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-width: 0; }
-  .tile-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-  .tile-value { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; margin: 2px 0; white-space: nowrap; }
-  .tile-sub { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; min-width: 0; }
-  .card h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
-  .sub-head { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
-  .sub-head:first-child { margin-top: 0; }
-  .sub-head.row { display: flex; justify-content: space-between; align-items: center; }
-  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px; }
-  .grid-2 > *, .levers > *, .insights > *, .bars > * { min-width: 0; }
-  .ctx-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ctx-meta { display: flex; gap: 8px; align-items: center; margin: 4px 0 10px; font-size: 11px; min-width: 0; }
-  .ctx-meta .dim { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chip { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--fg); white-space: nowrap; margin-right: 6px; }
-  .meter { position: relative; height: 10px; border-radius: 5px; background: var(--track); overflow: hidden; }
-  .meter-fill { height: 100%; border-radius: 5px; }
-  .meter-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--fg); opacity: .45; }
-  .meter-row { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; gap: 8px; flex-wrap: wrap; }
-  .badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
-  .badge.ok { color: var(--muted); }
-  .badge.warning { color: ${STATUS.warning}; }
-  .badge.critical { color: ${STATUS.critical}; }
-  .bars { display: grid; gap: 6px; }
-  .bar-row { display: grid; grid-template-columns: minmax(70px, 34%) 1fr auto; align-items: center; gap: 8px; }
-  .bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-  .bar-track { height: 8px; }
-  .bar { height: 8px; background: var(--series); border-radius: 0 4px 4px 0; }
-  .bar-row:hover .bar { filter: brightness(1.15); }
-  .bar-value { font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; min-width: 52px; }
-  .insights { display: grid; gap: 8px; }
-  .insight { border-left: 3px solid var(--series); padding: 2px 0 2px 10px; }
-  .insight-title { font-weight: 600; }
-  .insight-pattern { color: var(--muted); font-size: 12px; margin-top: 2px; }
-  .insight-action { margin-top: 3px; font-size: 12px; }
-  .arrow { color: var(--series); font-weight: 700; margin-right: 6px; }
-  .levers { display: grid; gap: 4px; }
-  .lever { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
-  .lever summary { min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
-  .lever summary::-webkit-details-marker { display: none; }
-  .lever summary::before { content: '▸'; color: var(--muted); margin-right: 6px; transition: transform .15s; }
-  .lever[open] summary::before { transform: rotate(90deg); }
-  .lever-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lever[open] .insight-pattern { margin-top: 6px; }
-  .pill { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; padding: 1px 8px; border-radius: 999px; background: var(--track); white-space: nowrap; }
-  .foot { font-size: 11px; color: var(--muted); margin-top: 8px; }
-  .sessions { display: grid; }
-  .session { display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--border); }
-  .session:first-child { border-top: 0; padding-top: 0; }
-  .session-main { min-width: 0; }
-  .session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .session-meta { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .session-cost { font-variant-numeric: tabular-nums; font-size: 12px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted); }
-  .dot.live { background: #0ca30c; border-color: #0ca30c; }
-  .accounts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; }
-  .account { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; min-width: 0; }
-  .account.active { border-color: var(--series); }
-  .account-email { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .account-meta { font-size: 11px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .empty { color: var(--muted); margin: 0; font-size: 12px; }
-  button { font: inherit; font-size: 12px; background: var(--btn-bg); color: var(--btn-fg); border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
-  button:hover { background: var(--btn-hover); }
-  button.ghost { background: transparent; color: var(--series); padding: 2px 6px; text-transform: none; letter-spacing: 0; }
-  button.ghost:hover { background: var(--track); }
-  .errors { color: var(--err); font-size: 11px; }
-  @media (max-width: 360px) {
-    body { padding: 8px; }
-    .tile-value { font-size: 18px; }
-    .bar-row { grid-template-columns: 1fr auto; }
-    .bar-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
-  }
-</style>
+<style>${theme.css(themeName)}</style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>🐡 fugu</h1>
-    <div><span class="dim">updated ${esc(updated)}</span> <button onclick="refresh()">Refresh</button></div>
+    <h1>${theme.fishMarkup()}FUGU <em>dash</em></h1>
+    <div class="header-side"><span class="stamp">updated ${esc(updated)}</span><button onclick="refresh()">Refresh</button></div>
   </header>
   ${renderKpis(A, data)}
   <div class="grid-2">
